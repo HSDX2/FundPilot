@@ -1,0 +1,39 @@
+[project]
+name = "fundpilot"
+version = "0.1.0"
+description = "FundPilot CLI — command-line interface to the FundPilot API"
+requires-python = "==3.12.13"
+dependencies = [
+    "typer>=0.15.0",
+    "httpx>=0.28.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "respx>=0.22",
+    "ruff>=0.7.0",
+]
+
+[project.scripts]
+fundpilot = "fundpilot.main:main"
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[[tool.pip.index-urls]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
