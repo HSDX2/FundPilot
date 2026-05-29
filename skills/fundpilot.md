@@ -1,94 +1,94 @@
-# FundPilot CLI Skill
+# FundPilot CLI 技能
 
-Use the `fundpilot` CLI to query Chinese fund data, sector rankings, AI analysis reports, and manage data collection.
+使用 `fundpilot` CLI 查询基金数据、板块排名、AI 分析报告以及管理数据采集。
 
-## Prerequisites
+## 前置条件
 
-- FundPilot backend must be running (default: `http://localhost:8000`)
-- Set `FUNDPILOT_URL` env var if backend is at a different address
+- FundPilot 后端必须处于运行状态（默认地址：`http://localhost:8000`）
+- 如果后端使用其他地址，请设置 `FUNDPILOT_URL` 环境变量
 
-## Quick Reference
+## 快速参考
 
-All commands output JSON by default. Add `--table` to commands that support it for tabular output.
+所有命令默认输出 JSON。对于支持的命令，添加 `--table` 参数可以输出表格格式。
 
-### Fund Queries
+### 基金查询
 
 ```
-# Search funds by name
+# 按名称搜索基金
 fundpilot fund search --name 新能源 --page 1 --page-size 10
 
-# Search by type (stock/mixed/index/etf/bond/monetary/qdii)
+# 按类型搜索（stock/mixed/index/etf/bond/monetary/qdii）
 fundpilot fund search --type stock --page 1 --page-size 10 --table
 
-# Get fund detail by code
+# 按代码获取基金详情
 fundpilot fund detail 000001
 
-# Get fund NAV history
+# 获取基金净值历史
 fundpilot fund nav 000001 --start 2026-01-01 --end 2026-05-24 --table
 
-# Get latest intraday estimate
+# 获取最新盘中估值
 fundpilot fund estimate 000001
 
-# Batch estimates
+# 批量估值
 fundpilot fund batch-estimate 000001,000011,110011
 ```
 
-### Sector Queries
+### 板块查询
 
 ```
-# Search sectors by name
+# 按名称搜索板块
 fundpilot sector search --name 新能源 --category concept --table
 
-# Get sector rankings (default: table output, top 20)
+# 获取板块排名（默认表格输出，前 20 条）
 fundpilot sector rank --category industry --limit 10
 fundpilot sector rank --category concept --limit 20 --table
 
-# Get sector money flow
+# 获取板块资金流向
 fundpilot sector money-flow <sector_uuid> --start 2026-05-01 --end 2026-05-24 --table
 ```
 
-### AI Analysis
+### AI 分析
 
 ```
-# List analysis reports
+# 查看分析报告列表
 fundpilot analysis report-list --type daily --page 1
 
-# Get latest report
+# 获取最新报告
 fundpilot analysis report-latest --type daily
 
-# List fund advice
+# 查看基金建议列表
 fundpilot analysis advice-list --action buy --page 1
 
-# Get latest market sentiment
+# 获取最新市场情绪
 fundpilot analysis sentiment-latest
 ```
 
-### Collection Management
+### 采集管理
 
 ```
-# Trigger a collector
+# 触发采集器
 fundpilot collect trigger sector_daily
 fundpilot collect trigger news --sources eastmoney,jin10
 
-# Check status (all or specific)
+# 查看状态（全部或指定）
 fundpilot collect status
 fundpilot collect status fund_list
 
-# Stop a running collector
+# 停止正在运行的采集器
 fundpilot collect stop fund_nav
 
-# View collection logs
+# 查看采集日志
 fundpilot collect logs --collector news --page 1 --table
 
-# View/update collector settings
+# 查看/更新采集器设置
 fundpilot collect settings
 fundpilot collect settings fund_list --interval 86400 --active
 ```
 
-### Available Collectors
+### 可用采集器
 
-| Name | Description | Default Interval |
-|------|-------------|---------|
+| 名称 | 描述 | 默认间隔 |
+|------|------|---------|
 | `fund_list` | 基金列表 | 24h |
 | `etf_list` | ETF 列表 | 24h |
 | `etf` | ETF 实时行情 | 30s |
@@ -101,10 +101,10 @@ fundpilot collect settings fund_list --interval 86400 --active
 | `news` | 新闻采集 | 10min |
 | `market_sentiment` | 市场情绪 | 24h |
 
-### Fund Types
+### 基金类型
 
-| Code | Meaning |
-|------|---------|
+| 代码 | 含义 |
+|------|------|
 | `stock` | 股票型 |
 | `mixed` | 混合型 |
 | `index` | 指数型 |
@@ -113,49 +113,57 @@ fundpilot collect settings fund_list --interval 86400 --active
 | `monetary` | 货币型 |
 | `qdii` | QDII |
 
-### News Sources (for `collect trigger news --sources`)
+### 新闻来源（用于 `collect trigger news --sources`）
 
-| Key | Source |
-|-----|--------|
+| 键 | 来源 |
+|-----|------|
 | `eastmoney` | 东方财富 |
 | `jin10` | 金十数据 |
 | `cls` | 财联社 |
 | `wallstreetcn` | 华尔街见闻 |
 
-## AI Usage Patterns
+## AI 使用模式
 
-### Pattern 1: User asks about market conditions
-Run sentiment + rank queries together to give a complete picture:
+### 模式 1：用户询问市场情况
+
+同时运行情绪查询和排名查询，提供完整视图：
+
 ```
 fundpilot analysis sentiment-latest
 fundpilot sector rank --category concept --limit 10
 ```
 
-### Pattern 2: User asks about a specific fund
-Get fund detail + estimate + latest advice:
+### 模式 2：用户询问某只基金
+
+获取基金详情 + 估值 + 最新建议：
+
 ```
 fundpilot fund detail <code>
 fundpilot fund estimate <code>
 ```
 
-### Pattern 3: User asks to collect data
-Trigger the appropriate collector:
+### 模式 3：用户要求采集数据
+
+触发相应的采集器：
+
 ```
 fundpilot collect trigger <collector_name>
 fundpilot collect status <collector_name>
 ```
 
-### Pattern 4: User asks about sectors
-Search to find the sector UUID, then get details:
+### 模式 4：用户询问板块
+
+搜索获取板块 UUID，然后获取详细信息：
+
 ```
 fundpilot sector search --name <keyword>
 fundpilot sector rank --category concept --limit 10
 ```
 
-## Important Notes
+## 重要说明
 
-- The CLI uses the FundPilot REST API — it must be running
-- `--table` flag is useful for human-readable output; omit for machine parsing
-- Sector operations (money-flow, detail) require a UUID, not a name — use `sector search` to find the ID first
-- Collection triggers return immediately; use `collect status` to check progress
-- All commands return JSON with the structure `{"success": true, "data": ...}`
+- CLI 依赖 FundPilot REST API——后端必须保持运行
+- `--table` 参数适用于人类可读的输出；机器解析时请省略
+- 板块操作（资金流向、详情）需要 UUID 而非名称——先使用 `sector search` 查找 ID
+- 采集触发后立即返回——使用 `collect status` 检查进度
+- 所有命令返回 JSON，结构为 `{"success": true, "data": ...}`
