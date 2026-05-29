@@ -10,6 +10,15 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+class DataSourceError(Exception):
+    """Raised when a data source exhausts all retries."""
+
+    def __init__(self, source_name: str, original: Exception) -> None:
+        self.source_name = source_name
+        self.original = original
+        super().__init__(f"{source_name}: {original}")
+
+
 class BaseDataSource(ABC):
     """Abstract base class for third-party data sources."""
 
@@ -34,7 +43,7 @@ async def with_retry(
     """Execute an async callable with exponential backoff retry.
 
     Delays: 1s → 2s → 4s before giving up.
-    Returns empty list on exhaustion.
+    Raises DataSourceError with the original exception on exhaustion.
     """
     last_exc: Exception | None = None
     for attempt in range(max_retries):
@@ -52,7 +61,7 @@ async def with_retry(
     logger.error(
         "%s exhausted all %d retries: %s", source_name, max_retries, last_exc,
     )
-    return []
+    raise DataSourceError(source_name, last_exc) from last_exc
 
 
 class RateLimiter:

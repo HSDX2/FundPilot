@@ -12,6 +12,7 @@ class NewsArticleResponse(BaseModel):
     url: str | None = None
     published_at: datetime | None = None
     sentiment_score: float | None = None
+    sentiment_detail: dict | None = None
 
     model_config = {"from_attributes": True}
 

@@ -20,12 +20,21 @@ class SectorResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SectorDetailResponse(SectorResponse):
+    """板块详情响应，包含行情快照和实时估算."""
+
+    price: Decimal | None = Field(default=None, description="最新收盘价")
+    change_pct: Decimal | None = Field(default=None, description="涨跌幅（%）")
+    volume: int | None = Field(default=None, description="成交量（手）")
+    realtime: dict | None = Field(default=None, description="实时估算 {price, change_pct, volume}")
+
+
 class SectorSnapshotResponse(BaseModel):
     """板块行情快照响应."""
 
     id: UUID = Field(description="记录唯一 ID")
     sector_id: UUID = Field(description="关联板块 ID")
-    timestamp: datetime = Field(description="快照时间")
+    timestamp: date_type = Field(description="快照日期")
     price: Decimal | None = Field(default=None, description="当前价格")
     open: Decimal | None = Field(default=None, description="开盘价")
     high: Decimal | None = Field(default=None, description="最高价")
@@ -43,9 +52,11 @@ class SectorRankItem(BaseModel):
     sector_id: UUID = Field(description="板块 ID")
     sector_name: str = Field(description="板块名称")
     category: str = Field(description="板块分类")
-    price: Decimal | None = Field(default=None, description="当前价格")
+    price: Decimal | None = Field(default=None, description="最新收盘价")
     change_pct: Decimal | None = Field(default=None, description="涨跌幅（%）")
-    timestamp: datetime | None = Field(default=None, description="行情时间")
+    realtime_price: Decimal | None = Field(default=None, description="实时估算价")
+    realtime_change_pct: Decimal | None = Field(default=None, description="实时涨跌幅（%）")
+    timestamp: date_type | None = Field(default=None, description="行情日期")
 
 
 class SectorListData(BaseModel):
@@ -55,7 +66,7 @@ class SectorListData(BaseModel):
     total: int = Field(description="总数")
     page: int = Field(default=1, ge=1, description="当前页码")
     page_size: int = Field(
-        default=20, ge=1, le=100, description="每页数量"
+        default=20, ge=1, le=500, description="每页数量"
     )
 
 
@@ -69,6 +80,26 @@ class SectorRankListData(BaseModel):
     """板块排行列表响应."""
 
     items: list[SectorRankItem] = Field(description="排行列表")
+    total: int = Field(default=0, description="总条数")
+    page: int = Field(default=1, ge=1, description="当前页码")
+    page_size: int = Field(default=30, ge=1, le=200, description="每页条数")
+
+
+class SectorMoneyFlowRankItem(BaseModel):
+    """THS 资金流向排行条目（无 DB 关联，仅实时展示）."""
+
+    id: str | None = Field(default=None, description="板块 UUID（匹配到 DB 记录时）")
+    name: str = Field(description="板块名称")
+    category: str = Field(description="板块分类：industry / concept")
+    main_force_net_inflow: Decimal | None = Field(
+        default=None, description="净流入（元）"
+    )
+
+
+class SectorMoneyFlowRankListData(BaseModel):
+    """资金流向排行列表响应."""
+
+    items: list[SectorMoneyFlowRankItem] = Field(description="排行列表")
 
 
 class SectorMoneyFlowResponse(BaseModel):

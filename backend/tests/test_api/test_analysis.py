@@ -209,7 +209,7 @@ class TestGenerateAdvice:
 class TestBatchSentiment:
     async def test_success(self, app, async_client: AsyncClient):
         mock_svc = MagicMock()
-        mock_svc.batch_analyze_sentiment = AsyncMock(return_value=5)
+        mock_svc.batch_analyze_sentiment = AsyncMock(return_value=(5, []))
 
         async def _override():
             yield mock_svc

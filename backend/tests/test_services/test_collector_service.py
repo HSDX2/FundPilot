@@ -64,48 +64,54 @@ class TestCollectFundList:
 
 
 class TestCollectEstimates:
-    async def test_collect_estimates_success(self):
-        """Estimate collection should add timestamps and call repo."""
+    async def test_collect_fund_estimates_success(self):
+        """Fund estimate collection should call batch_upsert."""
+        from uuid import uuid4
+
         mock_ds = AsyncMock()
         mock_ds.fetch_estimate_all.return_value = [
-            {"code": "000001", "estimate_nav": 1.23},
+            {"fund_code": "000001", "estimate_nav": 1.23, "estimate_change_pct": 0.5},
         ]
 
         mock_repo = AsyncMock()
-        mock_repo.batch_upsert_estimates.return_value = (1, 0)
+        mock_repo.batch_upsert.return_value = (1, 0)
+
+        mock_fund_repo = AsyncMock()
+        mock_fund_repo.get_all.return_value = [
+            type("Fund", (), {"id": uuid4(), "code": "000001"})(),
+        ]
 
         service = CollectorService(
-            fund_ds=mock_ds, fund_estimate_repo=mock_repo
+            fund_ds=mock_ds, fund_estimate_repo=mock_repo, fund_repo=mock_fund_repo,
         )
-        result = await service.collect_estimates()
+        result = await service.collect_fund_estimates()
 
         assert result.records_added == 1
-        # Verify timestamp was added
-        record = mock_repo.batch_upsert_estimates.call_args[0][0][0]
-        assert "timestamp" in record
 
-    async def test_collect_estimates_empty(self):
-        """Empty estimate data should return error."""
+    async def test_collect_fund_estimates_empty(self):
+        """Empty estimate data should return empty result."""
         mock_ds = AsyncMock()
         mock_ds.fetch_estimate_all.return_value = []
 
-        service = CollectorService(fund_ds=mock_ds)
-        result = await service.collect_estimates()
+        mock_repo = AsyncMock()
+        mock_fund_repo = AsyncMock()
+
+        service = CollectorService(
+            fund_ds=mock_ds, fund_estimate_repo=mock_repo, fund_repo=mock_fund_repo,
+        )
+        result = await service.collect_fund_estimates()
 
         assert result.records_added == 0
-        assert len(result.errors) > 0
+        assert len(result.errors) == 0
 
-    async def test_collect_estimates_no_repo(self):
-        """Without a repo, should not crash."""
+    async def test_collect_fund_estimates_no_repo(self):
+        """Without a repo, should return error."""
         mock_ds = AsyncMock()
-        mock_ds.fetch_estimate_all.return_value = [
-            {"code": "000001", "estimate_nav": 1.23},
-        ]
 
         service = CollectorService(fund_ds=mock_ds, fund_estimate_repo=None)
-        result = await service.collect_estimates()
+        result = await service.collect_fund_estimates()
 
-        assert result.records_added == 1
+        assert len(result.errors) > 0
 
 
 class TestCollectEtfSpot:
@@ -117,16 +123,14 @@ class TestCollectEtfSpot:
         ]
 
         mock_repo = AsyncMock()
-        mock_repo.batch_upsert_estimates.return_value = (1, 0)
+        mock_repo.get_by_code.return_value = None
 
         service = CollectorService(
-            fund_ds=mock_ds, fund_estimate_repo=mock_repo
+            fund_ds=mock_ds, fund_repo=mock_repo
         )
         result = await service.collect_etf_spot()
 
-        assert result.records_added == 1
-        record = mock_repo.batch_upsert_estimates.call_args[0][0][0]
-        assert "timestamp" in record
+        assert result.records_updated == 0
 
     async def test_collect_etf_spot_empty(self):
         """Empty ETF data should return error."""
@@ -147,7 +151,7 @@ class TestCollectEtfSpot:
         ]
 
         service = CollectorService(
-            fund_ds=mock_ds, fund_estimate_repo=None
+            fund_ds=mock_ds, fund_repo=None
         )
         result = await service.collect_etf_spot()
 
@@ -190,89 +194,6 @@ class TestCollectSectorList:
 
         service = CollectorService(sector_ds=mock_ds, sector_repo=None)
         result = await service.collect_sector_list()
-
-        assert result.records_added == 1
-
-
-class TestCollectSectorRealtime:
-    async def test_collect_sector_realtime_success(self):
-        """Sector realtime should map names to IDs."""
-        import uuid
-
-        sector_id = uuid.uuid4()
-
-        mock_ds = AsyncMock()
-        mock_ds.fetch_board_realtime.return_value = [
-            {"name": "半导体", "change_pct": 2.5},
-        ]
-
-        from unittest.mock import MagicMock
-
-        mock_sector = MagicMock()
-        mock_sector.id = sector_id
-        mock_sector.name = "半导体"
-
-        mock_sector_repo = AsyncMock()
-        mock_sector_repo.get_all_active.return_value = [mock_sector]
-
-        mock_snapshot_repo = AsyncMock()
-        mock_snapshot_repo.batch_upsert_snapshots.return_value = (1, 0)
-
-        service = CollectorService(
-            sector_ds=mock_ds,
-            sector_repo=mock_sector_repo,
-            sector_snapshot_repo=mock_snapshot_repo,
-        )
-        result = await service.collect_sector_realtime()
-
-        assert result.records_added == 1
-        records = mock_snapshot_repo.batch_upsert_snapshots.call_args[0][0]
-        assert records[0]["sector_id"] == sector_id
-
-    async def test_collect_sector_realtime_unknown_sector(self):
-        """Unknown sectors should be skipped."""
-        mock_ds = AsyncMock()
-        mock_ds.fetch_board_realtime.return_value = [
-            {"name": "Unknown Sector", "change_pct": 1.0},
-        ]
-
-        mock_sector_repo = AsyncMock()
-        mock_sector_repo.get_all_active.return_value = []
-
-        mock_snapshot_repo = AsyncMock()
-        mock_snapshot_repo.batch_upsert_snapshots.return_value = (0, 0)
-
-        service = CollectorService(
-            sector_ds=mock_ds,
-            sector_repo=mock_sector_repo,
-            sector_snapshot_repo=mock_snapshot_repo,
-        )
-        result = await service.collect_sector_realtime()
-
-        assert result.records_added == 0
-
-    async def test_empty_data(self):
-        """Empty realtime data should return error."""
-        mock_ds = AsyncMock()
-        mock_ds.fetch_board_realtime.return_value = []
-
-        service = CollectorService(sector_ds=mock_ds)
-        result = await service.collect_sector_realtime()
-
-        assert result.records_added == 0
-        assert len(result.errors) > 0
-
-    async def test_no_repos(self):
-        """Without repos, should not crash."""
-        mock_ds = AsyncMock()
-        mock_ds.fetch_board_realtime.return_value = [
-            {"name": "半导体", "change_pct": 2.5},
-        ]
-
-        service = CollectorService(
-            sector_ds=mock_ds, sector_repo=None, sector_snapshot_repo=None
-        )
-        result = await service.collect_sector_realtime()
 
         assert result.records_added == 1
 

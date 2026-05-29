@@ -59,9 +59,7 @@ services:
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_API_BASE: ${OPENAI_API_BASE:-}
-      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

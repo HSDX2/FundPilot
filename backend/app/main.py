@@ -4,8 +4,10 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.api.v1.router import router as v1_router
+from app.core.auth import api_key_middleware
 from app.core.config import settings
 from app.core.errors import AppError
 from app.core.response import ApiResponse
@@ -22,6 +24,9 @@ app = FastAPI(
     description="基金预测与推荐系统，提供基金数据、板块行情和 AI 分析服务",
     version="0.1.0",
 )
+
+# API Key 认证中间件
+app.middleware("http")(api_key_middleware)
 
 # CORS 跨域配置
 cors_origins = [
@@ -68,38 +73,38 @@ app.include_router(v1_router)
 @app.on_event("startup")
 async def startup():
     """Initialize database, scheduler, and default data on startup."""
+    # macOS SSL 证书路径修正（certifi 提供的 CA bundle）
+    import certifi, os as _os
+    if "SSL_CERT_FILE" not in _os.environ and "REQUESTS_CA_BUNDLE" not in _os.environ:
+        _os.environ["SSL_CERT_FILE"] = certifi.where()
+        _os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
+
+    from app.integrations.akshare import force_ipv4
+
+    force_ipv4()
+
     from app.core.database import engine
-    from app.models.base import Base
 
+    # 数据库建表和初始数据改为 scripts/db/ 下的独立脚本管理：
+    #   ./scripts/db/create.sh  → schema.sql  → 建表
+    #   ./scripts/db/seed.sh    → seed.sql    → 初始数据
+    # 启动时只做连接测试
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("SELECT 1"))
 
-    logger.info("Database tables created successfully")
+    logger.info("Database engine ready (schema/seed via scripts/db/)")
 
-    # Initialize default collector settings
-    from app.core.constants import (
-        DEFAULT_COLLECTOR_INTERVALS,
-        CollectorName,
-    )
-    from app.core.database import async_session_factory
-    from app.repositories.system_repo import CollectorSettingRepo
-
-    defaults: dict[str, int] = {}
-    for name in CollectorName:
-        if name in DEFAULT_COLLECTOR_INTERVALS:
-            defaults[name.value] = DEFAULT_COLLECTOR_INTERVALS[name]
-
-    async with async_session_factory() as session:
-        repo = CollectorSettingRepo(session)
-        await repo.initialize_defaults(defaults)
-        await session.commit()
-
-    logger.info("Default collector settings initialized")
+    # Check encryption key for AI provider API keys
+    if not settings.ENCRYPTION_KEY:
+        logger.warning(
+            "ENCRYPTION_KEY is not set — AI provider API keys will be "
+            "stored in plaintext. Set ENCRYPTION_KEY in .env for production."
+        )
 
     # Start scheduler
     from app.tasks.scheduler import register_jobs, scheduler
 
-    register_jobs()
+    await register_jobs()
     scheduler.start()
     logger.info("APScheduler started")
 

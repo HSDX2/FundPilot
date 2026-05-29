@@ -33,10 +33,14 @@ async def list_news(
     ),
     repo: NewsArticleRepo = Depends(get_news_article_repo),
 ):
-    from datetime import datetime
+    from datetime import datetime, timezone
 
-    start_dt = datetime.fromisoformat(start) if start else None
-    end_dt = datetime.fromisoformat(end) if end else None
+    start_dt = datetime.fromisoformat(start).replace(tzinfo=timezone.utc) if start else None
+    end_dt = (
+        datetime.fromisoformat(end)
+        .replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+        if end else None
+    )
 
     items, total = await repo.search(
         keyword=keyword,
@@ -53,6 +57,32 @@ async def list_news(
         page_size=page_size,
     )
     return ApiResponse.success(data.model_dump())
+
+
+@router.get(
+    "/unanalyzed-count",
+    summary="统计未分析新闻数量",
+    description="统计指定时间范围内 sentiment_score 为空的新闻数量",
+)
+async def unanalyzed_news_count(
+    start: str | None = Query(
+        default=None, description="开始时间，ISO 格式",
+    ),
+    end: str | None = Query(
+        default=None, description="结束时间，ISO 格式",
+    ),
+    repo: NewsArticleRepo = Depends(get_news_article_repo),
+):
+    from datetime import datetime, timezone
+
+    start_dt = datetime.fromisoformat(start).replace(tzinfo=timezone.utc) if start else None
+    end_dt = (
+        datetime.fromisoformat(end)
+        .replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+        if end else None
+    )
+    count = await repo.count_unanalyzed(start=start_dt, end=end_dt)
+    return ApiResponse.success({"count": count})
 
 
 @router.get(

@@ -15,6 +15,7 @@ from app.repositories.fund_repo import (
 from app.repositories.news_repo import NewsArticleRepo, NewsSectorLinkRepo
 from app.repositories.sector_repo import (
     SectorMoneyFlowRepo,
+    SectorRealtimeRepo,
     SectorRepo,
     SectorSnapshotRepo,
 )
@@ -23,7 +24,11 @@ from app.repositories.system_repo import (
     AIProviderRepo,
     CollectLogRepo,
     CollectorSettingRepo,
+    PromptSettingRepo,
 )
+from app.repositories.watchlist_repo import WatchedFundRepo
+from app.integrations.akshare.fund_datasource import FundDataSource
+from app.integrations.akshare.sector_datasource import SectorDataSource
 from app.services.analysis_service import AnalysisService
 from app.services.collector_service import CollectorService
 from app.services.fund_service import FundService
@@ -41,11 +46,6 @@ async def get_fund_nav_repo(
 ) -> AsyncGenerator[FundNavRepo]:
     yield FundNavRepo(session)
 
-
-async def get_fund_estimate_repo(
-    session: AsyncSession = Depends(get_db),
-) -> AsyncGenerator[FundEstimateRepo]:
-    yield FundEstimateRepo(session)
 
 
 async def get_sector_repo(
@@ -88,6 +88,7 @@ async def get_collector_service(
         sector_repo=SectorRepo(session),
         sector_snapshot_repo=SectorSnapshotRepo(session),
         sector_money_flow_repo=SectorMoneyFlowRepo(session),
+        sector_realtime_repo=SectorRealtimeRepo(session),
         news_repo=NewsArticleRepo(session),
         news_sector_link_repo=NewsSectorLinkRepo(session),
         sentiment_repo=MarketSentimentRepo(session),
@@ -98,12 +99,13 @@ async def get_collector_service(
 async def get_fund_service(
     fund_repo: FundRepo = Depends(get_fund_repo),
     fund_nav_repo: FundNavRepo = Depends(get_fund_nav_repo),
-    fund_estimate_repo: FundEstimateRepo = Depends(get_fund_estimate_repo),
+    session: AsyncSession = Depends(get_db),
 ) -> AsyncGenerator[FundService]:
     yield FundService(
         fund_repo=fund_repo,
         fund_nav_repo=fund_nav_repo,
-        fund_estimate_repo=fund_estimate_repo,
+        fund_estimate_repo=FundEstimateRepo(session),
+        fund_datasource=FundDataSource(),
     )
 
 
@@ -111,11 +113,14 @@ async def get_sector_service(
     sector_repo: SectorRepo = Depends(get_sector_repo),
     sector_snapshot_repo: SectorSnapshotRepo = Depends(get_sector_snapshot_repo),
     sector_money_flow_repo: SectorMoneyFlowRepo = Depends(get_sector_money_flow_repo),
+    session: AsyncSession = Depends(get_db),
 ) -> AsyncGenerator[SectorService]:
     yield SectorService(
         sector_repo=sector_repo,
         sector_snapshot_repo=sector_snapshot_repo,
         sector_money_flow_repo=sector_money_flow_repo,
+        sector_realtime_repo=SectorRealtimeRepo(session),
+        sector_datasource=SectorDataSource(),
     )
 
 
@@ -131,11 +136,18 @@ async def get_sentiment_repo(
     yield MarketSentimentRepo(session)
 
 
+async def get_prompt_setting_repo(
+    session: AsyncSession = Depends(get_db),
+) -> AsyncGenerator[PromptSettingRepo]:
+    yield PromptSettingRepo(session)
+
+
 async def get_analysis_service(
     session: AsyncSession = Depends(get_db),
 ) -> AsyncGenerator[AnalysisService]:
     yield AnalysisService(
         ai_provider_repo=AIProviderRepo(session),
+        prompt_setting_repo=PromptSettingRepo(session),
         analysis_report_repo=AnalysisReportRepo(session),
         fund_advice_repo=FundAdviceRepo(session),
         sector_repo=SectorRepo(session),
@@ -145,4 +157,6 @@ async def get_analysis_service(
         fund_nav_repo=FundNavRepo(session),
         fund_estimate_repo=FundEstimateRepo(session),
         news_repo=NewsArticleRepo(session),
+        watchlist_repo=WatchedFundRepo(session),
+        fund_datasource=FundDataSource(),
     )

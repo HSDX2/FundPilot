@@ -1,3 +1,5 @@
+import os
+
 from pydantic_settings import BaseSettings
 
 
@@ -38,10 +40,18 @@ class Settings(BaseSettings):
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         )
 
-    # AI API keys (optional, Phase 3)
-    OPENAI_API_KEY: str = ""
-    OPENAI_API_BASE: str = ""
-    CLAUDE_API_KEY: str = ""
+    # API Key authentication (comma-separated, empty = no auth)
+    API_KEYS: str = ""
+
+    # Encryption key for sensitive data (AI provider API keys)
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    ENCRYPTION_KEY: str = ""
+
+    # Proxy bypass for Chinese financial data sources
+    NO_PROXY: str = (
+        "eastmoney.com,10jqka.com.cn,sina.com.cn,cls.cn,jin10.com,"
+        "wallstreetcn.com,sse.com.cn,szse.cn,csindex.com.cn"
+    )
 
     # PyPI mirror (used by Dockerfile)
     PIP_INDEX_URL: str = "https://pypi.tuna.tsinghua.edu.cn/simple"
@@ -50,3 +60,11 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Bypass macOS system proxy for domestic financial data sources.
+# macOS SystemConfiguration proxy settings are read by urllib at a lower level
+# than env vars. Setting no_proxy=* tells urllib to skip proxy for all hosts.
+_no_proxy = settings.NO_PROXY
+if _no_proxy:
+    os.environ["no_proxy"] = _no_proxy
+    os.environ["NO_PROXY"] = _no_proxy

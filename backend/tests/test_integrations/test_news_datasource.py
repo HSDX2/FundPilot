@@ -12,6 +12,7 @@ from app.integrations.akshare.news_datasource import (
     SOURCE_WALLSTREETCN,
     NewsDataSource,
 )
+from app.integrations.base import DataSourceError
 
 # ── Fake httpx.AsyncClient for Jin10 tests ──────────────────────────
 
@@ -91,9 +92,8 @@ class TestNewsDataSource:
         with patch(
             "app.integrations.akshare.news_datasource.ak.stock_news_em",
             side_effect=RuntimeError("API error"),
-        ):
-            result = await ds.fetch_eastmoney()
-            assert result == []
+        ), pytest.raises(DataSourceError, match="news_eastmoney"):
+            await ds.fetch_eastmoney()
 
     @pytest.mark.asyncio
     async def test_fetch_cls_success(self):

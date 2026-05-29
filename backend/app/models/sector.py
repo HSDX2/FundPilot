@@ -20,6 +20,10 @@ class Sector(TimestampMixin, Base):
     money_flows = relationship(
         "SectorMoneyFlow", back_populates="sector", lazy="selectin"
     )
+    realtime = relationship(
+        "SectorRealtime", back_populates="sector", lazy="selectin",
+        uselist=False,
+    )
 
 
 class SectorSnapshot(TimestampMixin, Base):
@@ -28,7 +32,7 @@ class SectorSnapshot(TimestampMixin, Base):
     sector_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("sectors.id"), nullable=False
     )
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    timestamp: Mapped[date] = mapped_column(Date, nullable=False)
     price: Mapped[float | None] = mapped_column(Numeric(14, 4))
     open: Mapped[float | None] = mapped_column(Numeric(14, 4))
     high: Mapped[float | None] = mapped_column(Numeric(14, 4))
@@ -60,3 +64,19 @@ class SectorMoneyFlow(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("sector_id", "date", name="uq_sector_money_flow_date"),
     )
+
+
+class SectorRealtime(TimestampMixin, Base):
+    """板块实时行情 — 每个板块永远只存一条最新记录。"""
+
+    __tablename__ = "sector_realtime"
+
+    sector_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sectors.id"), nullable=False, unique=True,
+    )
+    price: Mapped[float | None] = mapped_column(Numeric(14, 4))
+    change_pct: Mapped[float | None] = mapped_column(Numeric(8, 4))
+    volume: Mapped[int | None] = mapped_column(Numeric(20, 0))
+    turnover: Mapped[float | None] = mapped_column(Numeric(20, 4))
+
+    sector = relationship("Sector", back_populates="realtime")

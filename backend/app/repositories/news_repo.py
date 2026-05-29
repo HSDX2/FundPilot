@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.news import NewsArticle, NewsSectorLink
@@ -16,6 +16,20 @@ class NewsArticleRepo(BaseRepository[NewsArticle]):
         stmt = select(NewsArticle).where(NewsArticle.url == url)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def count_unanalyzed(self, start: datetime | None = None, end: datetime | None = None) -> int:
+        """Count news articles with no sentiment score, optionally filtered by date range."""
+        from sqlalchemy import select as sa_select
+
+        stmt = sa_select(func.count(NewsArticle.id)).where(
+            NewsArticle.sentiment_score.is_(None),
+        )
+        if start:
+            stmt = stmt.where(NewsArticle.published_at >= start)
+        if end:
+            stmt = stmt.where(NewsArticle.published_at <= end)
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0
 
     async def batch_upsert(self, records: list[dict[str, Any]]) -> tuple[int, int]:
         """Insert or update news articles by URL. Returns (added, updated)."""
@@ -48,6 +62,7 @@ class NewsArticleRepo(BaseRepository[NewsArticle]):
         end: datetime | None = None,
         page: int = 1,
         page_size: int = 20,
+        sentiment_null: bool = False,
     ) -> tuple[list[NewsArticle], int]:
         query = select(NewsArticle)
         count_query = select(func.count(NewsArticle.id))
@@ -65,10 +80,12 @@ class NewsArticleRepo(BaseRepository[NewsArticle]):
             conditions.append(NewsArticle.published_at >= start)
         if end:
             conditions.append(NewsArticle.published_at <= end)
+        if sentiment_null:
+            conditions.append(NewsArticle.sentiment_score.is_(None))
 
         if conditions:
-            query = query.where(or_(*conditions))
-            count_query = count_query.where(or_(*conditions))
+            query = query.where(and_(*conditions))
+            count_query = count_query.where(and_(*conditions))
 
         query = query.order_by(NewsArticle.published_at.desc())
 

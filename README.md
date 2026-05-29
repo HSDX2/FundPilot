@@ -1,23 +1,121 @@
 # FundPilot
 
-中国基金投研分析平台 — 数据采集、AI 分析、命令行工具。
+中国基金投研分析平台 — 数据采集、AI 分析、可视化看板。
 
----
+## 项目简介
+
+FundPilot 是一个面向中国 A 股市场的基金研究与数据分析平台，提供以下核心功能：
+
+- **数据采集** — 从东方财富、金十数据、财联社、华尔街见闻等中国金融数据源定时采集基金净值、板块行情、新闻、资金流向等数据
+- **AI 分析引擎** — 接入 DeepSeek / GLM / Qwen / OpenAI 等大模型，自动生成板块分析报告、基金操作建议、新闻情绪评分
+- **可视化看板** — 前端基于 React + Ant Design，提供板块排行、基金查询、分析报告、情绪指标等交互页面
+- **任务调度** — 基于 APScheduler 的定时采集系统，支持交易日感知、交易时段限定、多级并发控制
+- **CLI 工具** — 可选命令行工具，终端直接查询和管理
+
+## 技术栈
+
+| 层 | 技术 |
+|----|------|
+| 后端框架 | Python 3.12 + FastAPI + Uvicorn |
+| 数据库 | PostgreSQL 16 + SQLAlchemy 2.0 async (asyncpg) |
+| 前端 | React 19 + TypeScript 6 + Vite 8 + Ant Design 6 |
+| 状态管理 | TanStack React Query 5 |
+| 任务调度 | APScheduler（交易日感知，活跃时段限定） |
+| 数据源 | AkShare / 东方财富 / 金十数据 / 财联社 / 华尔街见闻 |
+| AI 适配 | OpenAI 兼容接口（DeepSeek / GLM / Qwen / OpenAI / Kimi / MiniMax） |
+| CLI | Python Typer（可选组件） |
+
+## 项目架构
+
+```
+FundPilot/
+├── backend/                          # FastAPI 后端服务
+│   ├── app/
+│   │   ├── api/v1/                   # API 路由层（无业务逻辑）
+│   │   │   ├── analysis.py           #   分析报告 / 操作建议 / 情绪分析
+│   │   │   ├── ai_providers.py       #   AI Provider CRUD + 连通性测试
+│   │   │   ├── chat.py               #   AI 对话接口
+│   │   │   ├── collect.py            #   采集器触发 / 配置 / 日志
+│   │   │   ├── funds.py              #   基金查询 / 详情 / 净值
+│   │   │   ├── news.py               #   新闻列表 / 详情
+│   │   │   ├── sectors.py            #   板块排行 / 详情 / 快照 / 资金流向
+│   │   │   └── watchlist.py          #   自选关注（基金 / 板块）
+│   │   ├── core/                     # 配置、常量、数据库引擎、错误处理
+│   │   │   ├── config.py             #   环境变量 → Pydantic Settings
+│   │   │   ├── constants.py          #   枚举、采集器元信息
+│   │   │   ├── database.py           #   异步引擎与会话工厂
+│   │   │   ├── errors.py             #   统一错误码与异常类
+│   │   │   ├── response.py           #   统一响应格式
+│   │   │   └── task_lock.py          #   任务去重锁
+│   │   ├── models/                   # SQLAlchemy ORM 模型
+│   │   │   ├── fund.py               #   基金 / 净值 / 估值
+│   │   │   ├── sector.py             #   板块 / 快照 / 资金流向
+│   │   │   ├── news.py               #   新闻 / 板块关联
+│   │   │   ├── analysis.py           #   分析报告 / 操作建议
+│   │   │   ├── sentiment.py          #   市场情绪指标
+│   │   │   ├── system.py             #   Provider / 采集器配置 / 日志
+│   │   │   └── watchlist.py          #   自选关注
+│   │   ├── schemas/                  # Pydantic 请求/响应
+│   │   ├── repositories/            # 数据库访问层（仅 CRUD）
+│   │   ├── services/                 # 业务逻辑层
+│   │   │   ├── fund_service.py       #   基金搜索 / 净值采集
+│   │   │   ├── sector_service.py     #   板块排行 / 实时行情
+│   │   │   ├── analysis_service.py   #   AI 分析引擎
+│   │   │   └── collector_service.py  #   采集任务调度与服务
+│   │   ├── integrations/             # 第三方数据源适配器
+│   │   │   └── akshare/              #   AkShare 封装 + HTTP 源
+│   │   ├── ai/                       # AI 模型适配器
+│   │   │   ├── base.py               #   抽象 Provider 接口
+│   │   │   ├── openai_compat.py      #   OpenAI 兼容适配器
+│   │   │   └── prompts.py            #   系统提示词模板
+│   │   └── tasks/                    # APScheduler 定时任务
+│   │       ├── scheduler.py          #   调度器注册
+│   │       ├── collect_tasks.py      #   各采集任务实现
+│   │       └── analysis_tasks.py     #   AI 分析任务
+│   ├── tests/                        # pytest 测试
+│   ├── docs/                         # 架构 / 进度文档
+│   └── .env.example                  # 环境变量模版
+├── frontend/                         # React 前端
+│   └── src/
+│       ├── api/                      # API 客户端（ky）
+│       ├── pages/                    # 页面组件
+│       │   ├── dashboard/            #   数据看板
+│       │   ├── sectors/              #   板块排行 / 详情
+│       │   ├── funds/                #   基金查询 / 详情
+│       │   ├── analysis/             #   分析报告 / 操作建议 / 情绪
+│       │   ├── collect/              #   采集设置 / 日志
+│       │   ├── settings/             #   AI 配置 / 提示词编辑
+│       │   └── watchlist/            #   自选管理
+│       └── components/               # 通用组件
+├── scripts/                          # 启动/停止/状态 运维脚本
+├── docker-compose.yml                # Docker 编排
+└── .env.example                      # 项目级环境变量
+```
+
+### 分层约定
+
+```
+API Routes (thin) ──→ Services (business) ──→ Repositories (CRUD) ──→ Database
+
+第三方数据源 → Integrations (AkShare/HTTP)    AI 模型 → AI (Provider 适配器)
+```
+
+- API 路由层不含业务逻辑
+- Service 层不含数据库访问细节
+- Repository 层仅做 CRUD，不含业务判断
+- 所有 AI 调用经过 `AIProvider` 抽象接口
 
 ## 环境要求
 
 | 依赖 | 版本 | 说明 |
 |------|------|------|
-| Python | **3.12.13** | 必须精确版本 |
-| PostgreSQL | **16** | 数据库 |
+| Python | **3.12.13** | 必须精确版本，详见 `.python-version` |
+| PostgreSQL | **16** | 主数据库 |
+| Node.js | **18+** | 前端构建（Vite 8 需要） |
+| pnpm 或 npm | — | 前端包管理（用项目锁文件） |
 | Docker (可选) | 24+ | 替代本地 PostgreSQL，一键启动 |
-| pyenv (可选) | — | 管理 Python 版本 |
 
-中国用户：`pip` 和 Docker 构建默认使用清华 PyPI 镜像，如需更改见配置说明。
-
----
-
-## 从零开始运行项目
+## 从零开始运行
 
 ### 1. 克隆项目
 
@@ -28,8 +126,13 @@ cd FundPilot
 
 ### 2. 安装 Python 3.12.13
 
+**方式 A: pyenv（推荐）**
+
 ```bash
-# 使用 pyenv
+# 安装 pyenv
+curl https://pyenv.run | bash
+
+# 安装 Python 3.12.13
 pyenv install 3.12.13
 pyenv local 3.12.13
 
@@ -37,17 +140,32 @@ pyenv local 3.12.13
 python --version   # 必须输出 Python 3.12.13
 ```
 
-### 3. 创建数据库
+**方式 B: 直接从 Python 官网下载**
 
-**方式 A: Docker（推荐）**
 ```bash
-docker compose up -d postgres
-# PostgreSQL 运行在 localhost:5432
+# macOS
+brew install python@3.12
+# Linux（apt）
+sudo apt install python3.12 python3.12-venv
 ```
 
-**方式 B: 本地 PostgreSQL**
+### 3. 启动 PostgreSQL 16
+
+**方式 A: Docker（推荐，无需本地安装）**
+
 ```bash
-# macOS (Homebrew)
+# 启动 PostgreSQL
+docker compose up -d postgres
+
+# 验证连接
+psql -U fundpilot -h localhost -c "SELECT 1"
+# 密码: change-me（如未修改）
+```
+
+**方式 B: 本地安装**
+
+```bash
+# macOS
 brew install postgresql@16
 brew services start postgresql@16
 
@@ -56,240 +174,204 @@ createuser -s fundpilot
 createdb fundpilot -O fundpilot
 ```
 
-验证数据库可连接：
+验证：
 ```bash
-psql -U fundpilot -h localhost -c "SELECT 1"
+psql -U fundpilot -d fundpilot -c "SELECT version();"
 ```
 
-### 4. 创建配置文件
+### 4. 创建环境变量配置文件
 
-项目有 **3 个配置模版**，需要依次复制并填写：
+项目使用 `.env` 文件管理配置。需要复制模版并根据环境填写。
 
 ```bash
-# ① Docker Compose / 脚本引用（根目录）
-cp .env.example .env
-
-# ② 后端服务（backend/）
-cp backend/.env.example backend/.env
-
-# ③ CLI 工具（cli/，可选）
-cp cli/.env.example cli/.env
+# 复制模版
+cp .env.example .env                  # Docker Compose 用
+cp backend/.env.example backend/.env  # 后端服务用
 ```
 
-**必须修改的配置项：**
+#### 后端配置（backend/.env）
 
-| 文件 | 变量 | 说明 |
-|------|------|------|
-| `.env` 和 `backend/.env` | `DB_PASSWORD` | 修改默认值 `change-me` |
-| `backend/.env` | `DB_HOST` | Docker 用 `localhost`，本地 PG 用 `localhost` |
+| 变量 | 默认值 | 必须修改 | 说明 |
+|------|--------|---------|------|
+| `DB_HOST` | `localhost` | 否 | 数据库地址，Docker 用 `postgres` |
+| `DB_PORT` | `5432` | 否 | 数据库端口 |
+| `DB_USER` | `fundpilot` | 否 | 数据库用户 |
+| `DB_PASSWORD` | `change-me` | **是** | 数据库密码 |
+| `DB_NAME` | `fundpilot` | 否 | 数据库名 |
+| `ENCRYPTION_KEY` | 空 | 建议 | AI API Key 加密密钥，**不设置则 API Key 明文存储**。生成命令: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `API_KEYS` | 空 | 否 | 前端接口鉴权，逗号分隔，留空=不开启鉴权 |
+| `CORS_ORIGINS` | `*` | 否 | 允许跨域来源，生产环境改为具体域名 |
+| `LOG_LEVEL` | `INFO` | 否 | 日志级别 |
+| `NO_PROXY` | 国内源域名列表 | 否 | 绕过系统代理的域名，国内金融数据源需要直连 |
+| `PIP_INDEX_URL` | `https://pypi.tuna.tsinghua.edu.cn/simple` | 建议 | PyPI 镜像，**境外用户请置空** |
 
-> 如果你在中国境外，还需修改 `.env` 中的 `PIP_INDEX_URL`。
+#### 项目配置（.env）
 
-### 5. 安装依赖
+用于 Docker Compose 和服务脚本：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `DB_PASSWORD` | `change-me` | 与 `backend/.env` 保持一致 |
+| `ENCRYPTION_KEY` | 空 | 与 `backend/.env` 保持一致 |
+
+#### 配置 AI Provider（运行后通过页面操作）
+
+AI 模型配置（API Key、模型名、接口地址）**不需要写在 `.env` 中**，启动后在页面 `设置 → AI Provider 配置` 中通过表单添加和激活。API Key 会使用 `ENCRYPTION_KEY` 加密后存入数据库。
+
+支持的 AI 提供商：DeepSeek / GLM / Qwen / OpenAI / Kimi / MiniMax。
+
+#### 快速启动的最小配置
 
 ```bash
-# 后端
+# backend/.env
+DB_PASSWORD=your-password           # 改密码
+ENCRYPTION_KEY=your-fernet-key      # 生成一个
+
+# .env
+DB_PASSWORD=your-password           # 保持一致
+ENCRYPTION_KEY=your-fernet-key      # 保持一致
+```
+
+### 5. 初始化 Python 虚拟环境并安装后端依赖
+
+```bash
+# 创建虚拟环境（在项目根目录）
+python3.12 -m venv .venv
+
+# 激活
+source .venv/bin/activate      # Linux/macOS
+# 或: .venv\Scripts\activate   # Windows
+
+# 验证 Python 版本
+python --version               # 必须 3.12.13
+
+# 安装后端依赖
 cd backend
-python -m venv .venv
-source .venv/bin/activate
 pip install -e .
-
-# CLI（可选，终端操作后端用）
-cd ../cli
-pip install -e .
+cd ..
 ```
 
-### 6. 启动服务
+> **国内用户**: pip 默认使用清华 PyPI 镜像。
+> **境外用户**: 在 `.env` 中设置 `PIP_INDEX_URL=""` 使用官方源。
 
-**Docker 方式（一键）：**
+### 6. 创建数据库表并导入初始数据
+
+数据库表结构和初始数据通过独立脚本管理，不再在应用启动时自动建表。
+
 ```bash
-cd /path/to/FundPilot
-docker compose up -d
-./scripts/status.sh --docker
+# 建表（18 张表：基金、板块、新闻、AI 分析、市场情绪、采集器等）
+./scripts/db/create.sh
+
+# 导入采集器默认配置（12 个采集器，ON CONFLICT DO NOTHING）
+./scripts/db/seed.sh
 ```
 
-**本地方式：**
+如需要重建表（清空数据后重新创建）：
+
 ```bash
-cd /path/to/FundPilot
-./scripts/start.sh
+./scripts/db/create.sh --drop   # 删除所有表后重新创建
+./scripts/db/seed.sh            # 重新导入初始数据
 ```
 
-启动后后端自动：
-- 创建数据库表（`Base.metadata.create_all`）
-- 初始化 11 个采集器的默认配置
-- 注册并启动定时任务调度器
+建表和导数脚本说明：
 
-### 7. 验证
+| 文件 | 内容 |
+|------|------|
+| `scripts/db/schema.sql` | 18 张表的 `CREATE TABLE`（含主键、唯一约束、外键、索引、`gen_random_uuid()` 默认值）|
+| `scripts/db/seed.sql` | `collector_settings` — 12 个采集器的默认配置 |
+| `scripts/db/create.sh` | 调用 `schema.sql` 建表，支持 `--drop` 参数先删后建 |
+| `scripts/db/seed.sh` | 调用 `seed.sql` 导入初始配置 |
+
+### 7. 安装前端依赖并启动（可选，如需使用 Web 界面）
 
 ```bash
-# 健康检查
+cd frontend
+
+# 使用 npm
+npm install
+npm run dev
+
+# 或使用 pnpm
+pnpm install
+pnpm dev
+```
+
+前端默认运行在 `http://localhost:3000`。
+
+### 8. 验证所有服务
+
+```bash
+# 后端健康检查
 curl http://localhost:8000/health
-# → {"status":"ok"}
+# → {"status": "ok"}
 
-# 查看 API 文档
+# API 文档（浏览器打开）
 open http://localhost:8000/docs
 
 # 测试采集器
-fundpilot collect trigger sector_list
-fundpilot collect status
+curl -X POST http://localhost:8000/api/v1/collect/trigger \
+  -H "Content-Type: application/json" \
+  -d '{"collector": "sector_list"}'
+
+# 查看采集状态
+curl http://localhost:8000/api/v1/collect/status
 ```
 
----
+## 启动脚本
 
-## 项目架构
-
-```
-FundPilot/
-├── backend/                    # FastAPI 后端
-│   ├── app/
-│   │   ├── api/v1/             # API 路由（thin layer，不含业务逻辑）
-│   │   ├── core/               # 配置、数据库、错误处理
-│   │   ├── models/             # SQLAlchemy ORM（12 张表）
-│   │   ├── schemas/            # Pydantic 请求/响应模型
-│   │   ├── repositories/       # 数据库访问（仅 CRUD）
-│   │   ├── services/           # 业务逻辑
-│   │   ├── integrations/       # AkShare、Jin10、CLS 等第三方 API
-│   │   ├── ai/                 # AI Provider 适配器（6 家）
-│   │   └── tasks/              # APScheduler 定时任务
-│   ├── tests/                  # 254 个测试
-│   ├── .env.example            # 后端配置模版
-│   └── docs/                   # 架构/进度文档
-├── cli/                        # 命令行工具（typer）
-│   ├── fundpilot/
-│   │   └── commands/           # fund / sector / analysis / news / collect
-│   ├── tests/                  # 44 个测试
-│   └── .env.example            # CLI 配置模版
-├── scripts/                    # 运维脚本（start/stop/status/db）
-├── skills/                     # Claude Code Skill 定义
-├── docker-compose.yml          # Docker 编排
-├── .env.example                # Docker/项目级环境变量模版
-├── .gitignore
-└── README.md
-```
-
-### 技术栈
-
-| 层 | 技术 |
-|----|------|
-| 框架 | FastAPI + Uvicorn |
-| 数据库 | PostgreSQL 16 + SQLAlchemy 2.0 async |
-| 调度 | APScheduler（交易日感知） |
-| 数据源 | AkShare、Jin10、财联社、华尔街见闻 |
-| AI | DeepSeek / GLM / QWEN / OpenAI / Kimi / MiniMax |
-| CLI | Typer + HTTPX |
-| 部署 | Docker Compose |
-
-### 分层约定
-
-```
-API Routes ──→ Services ──→ Repositories ──→ Database
-  (thin)       (business)     (CRUD only)
-
-Integrations ──→ 第三方 API   │   AI Module ──→ Provider 适配器
-```
-
----
-
-## 全部配置文件说明
-
-### `backend/.env` — 后端服务配置
-
-参照 [backend/.env.example](backend/.env.example)：
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `APP_HOST` | `0.0.0.0` | 监听地址 |
-| `APP_PORT` | `8000` | 监听端口 |
-| `DEBUG` | `false` | 调试模式（开发时可开） |
-| `LOG_LEVEL` | `INFO` | 日志级别 |
-| `CORS_ORIGINS` | `*` | CORS 允许域名，逗号分隔 |
-| `DB_HOST` | `localhost` | 数据库地址 |
-| `DB_PORT` | `5432` | 数据库端口 |
-| `DB_USER` | `fundpilot` | 数据库用户 |
-| `DB_PASSWORD` | — | 数据库密码（必改） |
-| `DB_NAME` | `fundpilot` | 数据库名 |
-| `DB_POOL_SIZE` | `10` | 连接池大小 |
-| `DB_MAX_OVERFLOW` | `20` | 最大溢出连接 |
-| `OPENAI_API_KEY` | — | AI API Key（可选） |
-
-### `.env` — Docker 编排配置
-
-参照 [.env.example](.env.example)，变量同上表。`docker-compose.yml` 通过 `${VAR:-default}` 语法读取。
-
-### `cli/.env` — CLI 工具配置
-
-参照 [cli/.env.example](cli/.env.example)：
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `FUNDPILOT_URL` | `http://localhost:8000` | 后端地址 |
-
-### `.gitignore` — 版本控制排除
-
-已配置排除：`.env`、`.venv/`、`.claude/`、`__pycache__/`、IDE 目录等。
-
----
-
-## CLI 命令参考
+项目提供 `scripts/` 下的运维脚本，简化日常操作：
 
 ```bash
-# 基金
-fundpilot fund search --name 新能源 --type stock --table
-fundpilot fund detail 000001
-fundpilot fund nav 000001 --start 2026-01-01
-fundpilot fund estimate 000001
-fundpilot fund batch-estimate 000001,000011
+# 本地模式（需要自行启动 PostgreSQL）
+./scripts/start.sh          # 启动后端 + 前端
+./scripts/stop.sh           # 停止
+./scripts/status.sh         # 查看状态
 
-# 板块
-fundpilot sector search --category concept --table
-fundpilot sector rank --category industry --limit 10
-fundpilot sector money-flow <uuid> --start 2026-05-01
+# Docker 模式（一键启动全部）
+./scripts/start.sh --docker
+./scripts/stop.sh --docker
 
-# AI 分析
-fundpilot analysis report-latest --type daily
-fundpilot analysis advice-list --action buy
-fundpilot analysis sentiment-latest
-
-# 新闻
-fundpilot news search --keyword 新能源 --table
-
-# 采集
-fundpilot collect trigger news
-fundpilot collect status
-fundpilot collect logs --collector news
-fundpilot collect settings fund_list --interval 86400
+# 数据库管理
+./scripts/db/start.sh       # 仅启动 PostgreSQL
+./scripts/db/stop.sh        # 仅停止 PostgreSQL
 ```
 
-详细用法见 [skills/fundpilot.md](skills/fundpilot.md)。
+## API 概览
 
----
-
-## 运维脚本
-
-| 脚本 | 说明 |
+| 端点 | 说明 |
 |------|------|
-| `./scripts/start.sh [--docker]` | 启动所有服务 |
-| `./scripts/stop.sh [--docker]` | 停止所有服务 |
-| `./scripts/status.sh [--docker]` | 查看服务运行状态和端点 |
-| `./scripts/db/start.sh` | 仅启动 PostgreSQL |
-| `./scripts/db/stop.sh` | 仅停止 PostgreSQL |
-
----
+| `GET /health` | 健康检查 |
+| `GET /api/v1/funds` | 基金分页查询（支持名称/类型/公司/关注筛选） |
+| `GET /api/v1/funds/{code}/nav` | 基金净值 |
+| `GET /api/v1/sectors` | 板块列表 |
+| `GET /api/v1/sectors/rank` | 板块排行 |
+| `GET /api/v1/sectors/{id}` | 板块详情（含快照和实时估算） |
+| `GET /api/v1/news` | 新闻列表 |
+| `POST /api/v1/collect/trigger` | 触发采集任务 |
+| `GET /api/v1/collect/settings` | 采集器配置 |
+| `POST /api/v1/analysis/news/sentiment` | 批量新闻情绪分析 |
+| `GET /api/v1/analysis/reports` | 分析报告列表 |
+| `GET /api/v1/analysis/advice` | 操作建议列表 |
+| `POST /api/v1/admin/ai-providers/{id}/test` | AI 连通性测试 |
 
 ## 测试
 
 ```bash
-# 后端
+# 后端测试
 cd backend
-pytest tests/ -v                # 254 个测试
-pytest --cov=app --cov-report=term-missing
+source ../.venv/bin/activate
+pytest tests/ -v
 
-# CLI
-cd cli
-pytest tests/ -v                # 44 个测试
+# 带覆盖率
+pytest --cov=app --cov-report=term-missing
 ```
 
----
+## 安全注意事项
+
+- `.env` 文件包含数据库密码和 API Key，已配置 `.gitignore` 排除
+- AI Provider 的 API Key 通过 `ENCRYPTION_KEY` 加密后存储在数据库中
+- 运行时日志文件（`*.log`）已在 `.gitignore` 中排除
+- 所有敏感配置通过环境变量注入，不硬编码在代码中
 
 ## 开发进度
 
@@ -299,14 +381,6 @@ pytest tests/ -v                # 44 个测试
 | 2 | 新闻/资金流向、服务层 | 100% |
 | 3 | AI 分析引擎、情绪指标 | 100% |
 | 4 | CLI 工具、Skill 文件 | 100% |
-| 5 | 前端页面 | 待开发 |
+| 5 | 前端页面 | 100% |
 
-**总计 63/72 (88%)** — [PROGRESS.md](backend/docs/PROGRESS.md)
-
----
-
-## 相关文档
-
-- [ARCH.md](backend/docs/ARCH.md) — 架构设计文档
-- [CLAUDE.md](CLAUDE.md) — 编码规范
-- [skills/fundpilot.md](skills/fundpilot.md) — CLI Skill 使用指南
+详细进度见 [backend/docs/PROGRESS.md](backend/docs/PROGRESS.md)。

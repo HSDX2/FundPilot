@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,6 +17,7 @@ class NewsArticle(TimestampMixin, Base):
     url: Mapped[str | None] = mapped_column(Text, unique=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sentiment_score: Mapped[float | None] = mapped_column(Numeric(4, 2))
+    sentiment_detail: Mapped[dict | None] = mapped_column(JSON, default=None)
 
 
 class NewsSectorLink(Base):

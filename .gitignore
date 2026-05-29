@@ -31,10 +31,20 @@ Thumbs.db
 # Docker
 pgdata/
 
+# Runtime logs
+*.log
+.backend.log
+
+# DB dump files (not scripts/db/*.sql which is repo-managed)
+*.sql
+!/scripts/db/*.sql
+
 # Distribution
 dist/
 *.egg-info/
 build/
+frontend/node_modules/
+frontend/dist/
 
 # Claude
 .claude/

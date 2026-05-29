@@ -1,5 +1,7 @@
 # FundPilot
 
+用中文回答，代码中注释也使用中文
+
 ## Coding Standards & Development Guidelines
 
 ### General Principles

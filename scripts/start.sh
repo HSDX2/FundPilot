@@ -30,7 +30,7 @@ fi
 
 # 1. Start PostgreSQL (if not running)
 echo ""
-echo "[1/2] Checking database..."
+echo "[1/3] Checking database..."
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-5432}"
 
@@ -57,17 +57,41 @@ fi
 
 # 2. Start backend
 echo ""
-echo "[2/2] Starting backend..."
+echo "[2/3] Starting backend..."
 cd "$ROOT/backend"
 
-if [ ! -d ".venv" ]; then
-    echo "  Virtualenv not found. Run: python -m venv .venv && pip install -e ."
+if [ ! -d "$ROOT/.venv" ]; then
+    echo "  Virtualenv not found at $ROOT/.venv. Run: python -m venv $ROOT/.venv && cd $ROOT/backend && pip install -e ."
     exit 1
 fi
 
-PYTHON=".venv/bin/python"
+PYTHON="$ROOT/.venv/bin/python"
 APP_HOST="${APP_HOST:-0.0.0.0}"
 APP_PORT="${APP_PORT:-8000}"
 
 echo "  Starting on $APP_HOST:$APP_PORT..."
-"$PYTHON" -m uvicorn app.main:app --host "$APP_HOST" --port "$APP_PORT" --reload
+"$PYTHON" -m uvicorn app.main:app --host "$APP_HOST" --port "$APP_PORT" --reload &
+
+BACKEND_PID=$!
+
+# 3. Start frontend
+echo ""
+echo "[3/3] Starting frontend..."
+cd "$ROOT/frontend"
+if [ -d "node_modules" ]; then
+    npm run dev &
+    FRONTEND_PID=$!
+    echo "  Frontend dev server starting (PID $FRONTEND_PID)..."
+else
+    echo "  WARNING: node_modules not found. Run: cd frontend && npm install"
+fi
+
+echo ""
+echo "=== FundPilot started ==="
+echo "  Backend:  http://localhost:${APP_PORT:-8000}"
+echo "  Frontend: http://localhost:${FRONTEND_PORT:-3000}"
+echo "  API docs: http://localhost:${APP_PORT:-8000}/docs"
+echo ""
+
+# Wait for backend (keep script running)
+wait $BACKEND_PID

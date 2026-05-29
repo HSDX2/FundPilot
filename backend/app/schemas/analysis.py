@@ -10,6 +10,9 @@ class AnalysisReportResponse(BaseModel):
     id: UUID
     date: date
     report_type: str
+    category: str | None = None
+    sector_id: UUID | None = None
+    sector_name: str | None = None
     content: dict
     ai_model: str | None = None
     created_at: datetime
@@ -41,13 +44,22 @@ class GenerateAllReportsRequest(BaseModel):
         default=10,
         ge=1,
         le=50,
-        description="分析的板块数量上限",
+        description="分析的板块数量上限（按涨幅排名前N）",
+    )
+    category: str | None = Field(
+        default=None,
+        description="板块分类: industry(行业) / concept(概念)，不传=全部",
+    )
+    sector_ids: list[UUID] | None = Field(
+        default=None, description="指定板块 ID 列表，设置后忽略 limit",
     )
 
 
 class FundAdviceResponse(BaseModel):
     id: UUID
     fund_id: UUID
+    fund_code: str | None = None
+    fund_name: str | None = None
     date: date
     action: str
     reason: dict
@@ -88,12 +100,26 @@ class NewsSentimentResponse(BaseModel):
     results: list[SentimentResult] = []
 
 
+class BatchDeleteReportsRequest(BaseModel):
+    ids: list[UUID] = Field(min_length=1, max_length=100, description="要删除的报告 ID 列表")
+
+
 class BatchSentimentRequest(BaseModel):
     limit: int = Field(
-        default=20,
+        default=200,
         ge=1,
-        le=100,
+        le=1000,
         description="最多分析 N 条新闻",
+    )
+    force: bool = Field(
+        default=False,
+        description="是否覆盖已分析过的新闻",
+    )
+    start_date: date | None = Field(
+        default=None, description="开始日期，默认今天-3天",
+    )
+    end_date: date | None = Field(
+        default=None, description="结束日期，默认今天",
     )
 
 

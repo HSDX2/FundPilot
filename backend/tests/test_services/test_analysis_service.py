@@ -137,7 +137,7 @@ class TestGenerateFundAdvice:
             fund_mock.type = "股票型"
             svc._fund_repo.get = AsyncMock(return_value=fund_mock)
             svc._nav_repo.get_by_fund_and_date_range = AsyncMock(return_value=[])
-            svc._est_repo.get_latest_by_fund = AsyncMock(return_value=None)
+            svc._est_repo.get_by_fund = AsyncMock(return_value=None)
             svc._news_repo.search = AsyncMock(return_value=([], 0))
 
             advice = await svc.generate_fund_advice(uuid4())
@@ -163,7 +163,7 @@ class TestGenerateFundAdvice:
             fund_mock.type = "X"
             svc._fund_repo.get = AsyncMock(return_value=fund_mock)
             svc._nav_repo.get_by_fund_and_date_range = AsyncMock(return_value=[])
-            svc._est_repo.get_latest_by_fund = AsyncMock(return_value=None)
+            svc._est_repo.get_by_fund = AsyncMock(return_value=None)
             svc._news_repo.search = AsyncMock(return_value=([], 0))
 
             advice = await svc.generate_fund_advice(uuid4())

@@ -17,6 +17,7 @@ class ErrorCode:
     REPORT_NOT_FOUND = "REPORT_NOT_FOUND"
     ADVICE_NOT_FOUND = "ADVICE_NOT_FOUND"
     AI_ANALYSIS_FAILED = "AI_ANALYSIS_FAILED"
+    TASK_RUNNING = "TASK_RUNNING"
 
 
 # HTTP status code mapping per error code
@@ -33,6 +34,7 @@ ERROR_HTTP_STATUS: dict[str, int] = {
     ErrorCode.REPORT_NOT_FOUND: 404,
     ErrorCode.ADVICE_NOT_FOUND: 404,
     ErrorCode.AI_ANALYSIS_FAILED: 500,
+    ErrorCode.TASK_RUNNING: 409,
 }
 
 

@@ -134,7 +134,6 @@ class TestGetFundNav:
 class TestGetFundEstimate:
     async def test_found(self, app, async_client: AsyncClient):
         """GET /api/v1/funds/{code}/estimate should return latest estimate."""
-        from datetime import datetime
         from types import SimpleNamespace
 
         fund_id = uuid.uuid4()
@@ -144,14 +143,11 @@ class TestGetFundEstimate:
             code = "000001"
             name = "Test"
 
-        # SimpleNamespace works with model_validate(from_attributes=True)
         estimate = SimpleNamespace(
             id=uuid.uuid4(),
             fund_id=fund_id,
-            timestamp=datetime(2026, 5, 23, 14, 0, tzinfo=UTC),
-            estimate_nav=None,
+            estimate_nav=1.23,
             estimate_change_pct=-0.15,
-            estimate_change_amount=None,
         )
 
         mock_fund_repo = AsyncMock(spec=FundRepo)
@@ -159,13 +155,15 @@ class TestGetFundEstimate:
         app.dependency_overrides[get_fund_repo] = _override_repo(mock_fund_repo)
 
         mock_est_repo = AsyncMock()
-        mock_est_repo.get_latest_by_fund.return_value = estimate
+        mock_est_repo.get_by_fund.return_value = estimate
         app.dependency_overrides[get_fund_estimate_repo] = _override_repo(mock_est_repo)
 
         resp = await async_client.get("/api/v1/funds/000001/estimate")
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is True
+        assert data["data"]["estimate_nav"] == 1.23
+        assert data["data"]["estimate_change_pct"] == -0.15
 
         app.dependency_overrides.clear()
 
@@ -181,7 +179,7 @@ class TestGetFundEstimate:
         app.dependency_overrides[get_fund_repo] = _override_repo(mock_fund_repo)
 
         mock_est_repo = AsyncMock()
-        mock_est_repo.get_latest_by_fund.return_value = None
+        mock_est_repo.get_by_fund.return_value = None
         app.dependency_overrides[get_fund_estimate_repo] = _override_repo(mock_est_repo)
 
         resp = await async_client.get("/api/v1/funds/000001/estimate")
@@ -220,7 +218,6 @@ class TestBatchEstimates:
 
     async def test_with_codes(self, app, async_client: AsyncClient):
         """Valid codes should return estimates."""
-        from datetime import datetime
         from types import SimpleNamespace
 
         fund_id = uuid.uuid4()
@@ -233,18 +230,16 @@ class TestBatchEstimates:
         estimate = SimpleNamespace(
             id=uuid.uuid4(),
             fund_id=fund_id,
-            timestamp=datetime(2026, 5, 23, 14, 0, tzinfo=UTC),
             estimate_nav=None,
             estimate_change_pct=0.5,
-            estimate_change_amount=None,
         )
 
         mock_fund_repo = AsyncMock(spec=FundRepo)
-        mock_fund_repo.get_by_code.return_value = FakeFund()
+        mock_fund_repo.get_by_codes.return_value = [FakeFund()]
         app.dependency_overrides[get_fund_repo] = _override_repo(mock_fund_repo)
 
         mock_est_repo = AsyncMock()
-        mock_est_repo.get_latest_by_fund.return_value = estimate
+        mock_est_repo.get_by_fund.return_value = estimate
         app.dependency_overrides[get_fund_estimate_repo] = _override_repo(mock_est_repo)
 
         resp = await async_client.get(

@@ -42,22 +42,20 @@ class TestCollectorName:
         assert CollectorName.FUND_LIST == "fund_list"
         assert CollectorName.ETF_LIST == "etf_list"
         assert CollectorName.ETF == "etf"
-        assert CollectorName.SECTOR == "sector"
         assert CollectorName.SECTOR_LIST == "sector_list"
-        assert CollectorName.SECTOR_DAILY == "sector_daily"
-        assert CollectorName.FUND_ESTIMATE == "fund_estimate"
+        assert CollectorName.SECTOR_BATCH_HISTORY == "sector_batch_history"
+        assert CollectorName.SECTOR_BATCH_DAILY == "sector_batch_daily"
         assert CollectorName.FUND_NAV == "fund_nav"
         assert CollectorName.NEWS == "news"
 
     def test_default_intervals(self):
         assert DEFAULT_COLLECTOR_INTERVALS[CollectorName.ETF] == 30
-        assert DEFAULT_COLLECTOR_INTERVALS[CollectorName.SECTOR] == 60
-        assert DEFAULT_COLLECTOR_INTERVALS[CollectorName.FUND_ESTIMATE] == 300
         assert DEFAULT_COLLECTOR_INTERVALS[CollectorName.NEWS] == 600
         assert DEFAULT_COLLECTOR_INTERVALS[CollectorName.FUND_LIST] == 86400
         assert DEFAULT_COLLECTOR_INTERVALS[CollectorName.ETF_LIST] == 86400
         assert DEFAULT_COLLECTOR_INTERVALS[CollectorName.SECTOR_LIST] == 86400
-        assert DEFAULT_COLLECTOR_INTERVALS[CollectorName.SECTOR_DAILY] == 86400
+        assert DEFAULT_COLLECTOR_INTERVALS[CollectorName.SECTOR_BATCH_HISTORY] == 86400
+        assert DEFAULT_COLLECTOR_INTERVALS[CollectorName.SECTOR_BATCH_DAILY] == 86400
         assert DEFAULT_COLLECTOR_INTERVALS[CollectorName.FUND_NAV] == 86400
 
 

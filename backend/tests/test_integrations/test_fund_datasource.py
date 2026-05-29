@@ -1,8 +1,10 @@
 """Tests for FundDataSource — AkShare calls are mocked."""
 
 import pandas as pd
+import pytest
 
 from app.integrations.akshare.fund_datasource import FundDataSource
+from app.integrations.base import DataSourceError
 
 MOCK_MODULE = "app.integrations.akshare.fund_datasource.ak"
 
@@ -42,15 +44,15 @@ class TestFetchFundList:
         assert result == []
 
     async def test_akshare_exception(self, mocker):
-        """AkShare exception should return empty list."""
+        """AkShare exception should raise DataSourceError after retries exhausted."""
         mocker.patch(
             f"{MOCK_MODULE}.fund_name_em",
             side_effect=Exception("Connection error"),
             create=True,
         )
 
-        result = await FundDataSource().fetch_fund_list()
-        assert result == []
+        with pytest.raises(DataSourceError, match="akshare_fund"):
+            await FundDataSource().fetch_fund_list()
 
 
 class TestFetchEtfSpot:

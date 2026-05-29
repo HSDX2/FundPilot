@@ -192,3 +192,46 @@ async def activate_ai_provider(
     return ApiResponse.success(
         AIProviderResponse.model_validate(await repo.get(pid)).model_dump()
     )
+
+
+@router.post(
+    "/{provider_id}/test",
+    summary="测试 AI Provider 连通性",
+    description="向 AI API 发送一条简单消息验证密钥和网络是否正常",
+)
+async def test_ai_provider_connection(
+    provider_id: Annotated[str, Path(description="AI Provider UUID")],
+    repo: AIProviderRepo = Depends(get_ai_provider_repo),
+):
+    try:
+        pid = uuid.UUID(provider_id)
+    except ValueError:
+        raise InvalidArgumentError("AI Provider ID 格式无效")
+
+    provider = await repo.get(pid)
+    if provider is None:
+        raise AIProviderNotFoundError(provider_id)
+
+    from app.ai.openai_compat import OpenAICompatibleProvider
+
+    client = OpenAICompatibleProvider(
+        base_url=provider.api_base_url or "",
+        api_key=provider.api_key or "",
+        model=provider.model_name or "",
+        provider_type=provider.provider_type,
+    )
+    try:
+        text = await client.chat(
+            messages=[{"role": "user", "content": "回复 OK 即可"}],
+            temperature=0.1,
+            max_tokens=10,
+        )
+        return ApiResponse.success({
+            "success": True,
+            "reply": text[:200],
+        })
+    except Exception as e:
+        return ApiResponse.success({
+            "success": False,
+            "error": str(e),
+        })

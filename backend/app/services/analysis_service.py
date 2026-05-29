@@ -16,6 +16,7 @@ from app.ai.prompts import (
     SECTOR_ANALYSIS_USER_MONTHLY,
     SECTOR_ANALYSIS_USER_WEEKLY,
 )
+from app.integrations.akshare.fund_datasource import FundDataSource
 from app.models.analysis import AnalysisReport, FundAdvice
 from app.repositories.analysis_repo import AnalysisReportRepo, FundAdviceRepo
 from app.repositories.fund_repo import FundEstimateRepo, FundNavRepo, FundRepo
@@ -25,7 +26,8 @@ from app.repositories.sector_repo import (
     SectorRepo,
     SectorSnapshotRepo,
 )
-from app.repositories.system_repo import AIProviderRepo
+from app.repositories.system_repo import AIProviderRepo, PromptSettingRepo
+from app.repositories.watchlist_repo import WatchedFundRepo
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,7 @@ class AnalysisService:
     def __init__(
         self,
         ai_provider_repo: AIProviderRepo,
+        prompt_setting_repo: PromptSettingRepo,
         analysis_report_repo: AnalysisReportRepo,
         fund_advice_repo: FundAdviceRepo,
         sector_repo: SectorRepo,
@@ -51,8 +54,11 @@ class AnalysisService:
         fund_nav_repo: FundNavRepo,
         fund_estimate_repo: FundEstimateRepo,
         news_repo: NewsArticleRepo,
+        watchlist_repo: WatchedFundRepo,
+        fund_datasource: FundDataSource | None = None,
     ) -> None:
         self._ai_provider_repo = ai_provider_repo
+        self._prompt_repo = prompt_setting_repo
         self._report_repo = analysis_report_repo
         self._advice_repo = fund_advice_repo
         self._sector_repo = sector_repo
@@ -62,6 +68,8 @@ class AnalysisService:
         self._nav_repo = fund_nav_repo
         self._est_repo = fund_estimate_repo
         self._news_repo = news_repo
+        self._watchlist_repo = watchlist_repo
+        self._fund_ds = fund_datasource or FundDataSource()
 
     async def _get_provider(self) -> AIProvider:
         provider_model = await self._ai_provider_repo.get_active()
@@ -73,6 +81,16 @@ class AnalysisService:
             model=provider_model.model_name,
             provider_type=provider_model.provider_type,
         )
+
+    async def _get_system_prompt(self, key: str, default: str) -> str:
+        """获取系统提示词：优先使用 DB 自定义版本，否则返回默认值."""
+        stored = await self._prompt_repo.get_all()
+        return stored.get(key) or default
+
+    async def _get_user_prompt(self, key: str, default: str) -> str:
+        """获取用户提示词模板：优先使用 DB 自定义版本，否则返回默认值."""
+        stored = await self._prompt_repo.get_all()
+        return stored.get(key) or default
 
     # ── Sector Analysis ───────────────────────────────────────────────
 
@@ -100,7 +118,8 @@ class AnalysisService:
             end=now,
         )
         recent_changes = "\n".join(
-            f"- {s.timestamp.strftime('%m-%d')}: {s.change_pct:+.2f}%"
+            f"- {s.timestamp.strftime('%m-%d') if s.timestamp else '??-??'}: "
+            f"{s.change_pct:+.2f}%" if s.change_pct is not None else "N/A"
             for s in recent_snapshots[:10]
         ) if recent_snapshots else "暂无近期数据"
 
@@ -114,10 +133,16 @@ class AnalysisService:
                 f"- {n.title}" for n in news_items
             )
 
-        prompt_template = _SECTOR_PROMPT_MAP.get(
+        default_user = _SECTOR_PROMPT_MAP.get(
             report_type, SECTOR_ANALYSIS_USER_DAILY
         )
-        user_prompt = prompt_template.format(
+        system_prompt = await self._get_system_prompt(
+            "sector_analysis_system", SECTOR_ANALYSIS_SYSTEM,
+        )
+        user_prompt_template = await self._get_user_prompt(
+            f"sector_analysis_user_{report_type}", default_user,
+        )
+        user_prompt = user_prompt_template.format(
             sector_name=sector.name,
             category=sector.category,
             latest_price=snapshot.price if snapshot else "N/A",
@@ -153,13 +178,15 @@ class AnalysisService:
         )
 
         result = await ai.analyze(
-            system_prompt=SECTOR_ANALYSIS_SYSTEM,
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
         )
 
         report = AnalysisReport(
             date=today,
             report_type=report_type,
+            category=sector.category,
+            sector_id=sector.id,
             content=result,
             ai_model=ai.model,
         )
@@ -168,38 +195,86 @@ class AnalysisService:
         return report
 
     async def generate_all_sector_reports(
-        self, report_type: str = "daily", limit: int = 10,
+        self,
+        report_type: str = "daily",
+        limit: int = 10,
+        sector_ids: list[str] | None = None,
+        category: str | None = None,
     ) -> list[AnalysisReport]:
-        """Generate reports for top sectors by latest snapshot."""
+        """Generate reports for top sectors (optionally filtered by category)."""
         from sqlalchemy import func, select
 
         from app.models.sector import SectorSnapshot
 
-        ts_stmt = select(func.max(SectorSnapshot.timestamp))
-        ts_result = await self._sector_repo.session.execute(ts_stmt)
-        latest_ts = ts_result.scalar()
-        if latest_ts is None:
-            sectors = list(await self._sector_repo.get_all_active())
-            latest_snapshots = [(None, s) for s in sectors[:limit]]
+        if sector_ids:
+            sectors_to_process = []
+            for sid in sector_ids:
+                sector = await self._sector_repo.get(sid)
+                if sector:
+                    sectors_to_process.append(sector)
         else:
-            latest_snapshots = await self._snapshot_repo.get_rank_by_timestamp(
-                timestamp=latest_ts, limit=limit,
-            )
+            ts_stmt = select(func.max(SectorSnapshot.timestamp))
+            ts_result = await self._sector_repo.session.execute(ts_stmt)
+            latest_ts = ts_result.scalar()
+            if latest_ts is None:
+                sectors_to_process = list(await self._sector_repo.get_all_active())[:limit]
+            else:
+                latest_snapshots = await self._snapshot_repo.get_rank_by_timestamp(
+                    timestamp=latest_ts, limit=limit, category=category,
+                )
+                sectors_to_process = [s for _, s in latest_snapshots]
 
-        reports = []
-        for snap, sector in latest_snapshots:
-            try:
-                report = await self.generate_sector_report(
-                    sector.id, report_type,
-                )
-                reports.append(report)
-            except Exception:
-                logger.exception(
-                    "Failed to generate report for sector %s", sector.id,
-                )
-        return reports
+            # 如果指定了 category 但快照不够，从活跃板块补充
+            if category and len(sectors_to_process) < limit:
+                active = await self._sector_repo.get_active_by_category(category)
+                existing = {s.id for s in sectors_to_process}
+                for s in active:
+                    if s.id not in existing:
+                        sectors_to_process.append(s)
+                    if len(sectors_to_process) >= limit:
+                        break
+
+        sem = asyncio.Semaphore(3)  # 最多 3 个并发 AI 调用
+
+        async def _generate_one(sector):
+            async with sem:
+                try:
+                    return await self.generate_sector_report(
+                        sector.id, report_type,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to generate report for sector %s", sector.id,
+                    )
+                    return None
+
+        results = await asyncio.gather(
+            *(_generate_one(s) for s in sectors_to_process),
+        )
+        return [r for r in results if r is not None]
 
     # ── Fund Advice ───────────────────────────────────────────────────
+
+    async def _get_fund_sector_performance(self, fund) -> str:
+        """查找基金关联的板块及其最新表现."""
+        try:
+            sectors = await self._sector_repo.get_all_active()
+            parts = []
+            for s in sectors:
+                if not s.name:
+                    continue
+                # 板块名出现在基金名中，或基金名出现在板块名中
+                if s.name in fund.name or fund.name in s.name:
+                    snap = await self._snapshot_repo.get_latest_by_sector(s.id)
+                    if snap and snap.change_pct is not None:
+                        pct = f"{snap.change_pct:+.2f}%"
+                    else:
+                        pct = "N/A"
+                    parts.append(f"{s.name}: {pct}")
+            return "\n".join(parts) if parts else "暂无关联板块数据"
+        except Exception:
+            logger.debug("Failed to lookup sector performance for %s", fund.code)
+            return "暂无关联板块数据"
 
     async def generate_fund_advice(self, fund_id) -> FundAdvice:
         ai = await self._get_provider()
@@ -219,16 +294,29 @@ class AnalysisService:
             for n in navs[:10]
         ) if navs else "暂无净值数据"
 
-        # Load latest estimate
-        estimate = await self._est_repo.get_latest_by_fund(fund_id)
+        # Load latest estimate  via live API (not from DB)
         estimate_str = "暂无实时估值"
-        if estimate:
-            estimate_str = (
-                f"估值: {estimate.estimate_nav:.4f}, "
-                f"涨跌: {estimate.estimate_change_pct:+.2f}%"
-                if estimate.estimate_change_pct is not None
-                else f"估值: {estimate.estimate_nav:.4f}"
-            )
+        try:
+            est = await self._fund_ds.fetch_estimate_by_code(fund.code)
+            if est and est.get("estimate_nav") is not None:
+                est_nav = est.get("estimate_nav")
+                est_pct = est.get("estimate_change_pct")
+                if est_pct is not None:
+                    estimate_str = (
+                        f"估值: {est_nav:.4f}, "
+                        f"涨跌: {est_pct:+.2f}%"
+                    )
+                else:
+                    estimate_str = f"估值: {est_nav:.4f}"
+            elif fund.latest_price is not None:
+                # ETF 回退：使用 fund 表 latest_price / latest_change_pct
+                pct_str = (
+                    f", 涨跌: {float(fund.latest_change_pct):+.2f}%"
+                    if fund.latest_change_pct is not None else ""
+                )
+                estimate_str = f"实时价: {float(fund.latest_price):.4f}{pct_str}"
+        except Exception:
+            logger.debug("Live estimate fetch failed for %s", fund.code)
 
         # News
         news_titles = "暂无"
@@ -238,7 +326,13 @@ class AnalysisService:
         if news_items:
             news_titles = "\n".join(f"- {n.title}" for n in news_items)
 
-        user_prompt = FUND_ADVICE_USER.format(
+        system_prompt = await self._get_system_prompt(
+            "fund_advice_system", FUND_ADVICE_SYSTEM,
+        )
+        user_prompt_template = await self._get_user_prompt(
+            "fund_advice_user", FUND_ADVICE_USER,
+        )
+        user_prompt = user_prompt_template.format(
             fund_name=fund.name,
             fund_code=fund.code,
             fund_type=fund.type or "未知",
@@ -246,12 +340,19 @@ class AnalysisService:
             accumulated_nav=navs[0].accumulated_nav if navs else "N/A",
             nav_history=nav_history,
             estimate=estimate_str,
-            sector_performance="暂无关联板块数据",
+            sector_performance=await self._get_fund_sector_performance(fund),
             news_titles=news_titles,
         )
 
+        # 追加持仓金额（取自关注列表）
+        holding_amount_str = "未设置"
+        wf = await self._watchlist_repo.get_by_fund_id(fund_id)
+        if wf and wf.holding_amount is not None:
+            holding_amount_str = f"{float(wf.holding_amount):.2f} 元"
+        user_prompt += f"\n\n持仓金额：{holding_amount_str}"
+
         result = await ai.analyze(
-            system_prompt=FUND_ADVICE_SYSTEM,
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
         )
 
@@ -300,7 +401,13 @@ class AnalysisService:
             raise ValueError(f"News {news_id} not found")
 
         content = news.content or news.title or ""
-        user_prompt = NEWS_SENTIMENT_USER.format(
+        system_prompt = await self._get_system_prompt(
+            "news_sentiment_system", NEWS_SENTIMENT_SYSTEM,
+        )
+        user_prompt_template = await self._get_user_prompt(
+            "news_sentiment_user", NEWS_SENTIMENT_USER,
+        )
+        user_prompt = user_prompt_template.format(
             title=news.title or "",
             source=news.source or "未知",
             published_at=news.published_at.isoformat() if news.published_at else "未知",
@@ -308,7 +415,7 @@ class AnalysisService:
         )
 
         result = await ai.analyze(
-            system_prompt=NEWS_SENTIMENT_SYSTEM,
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
         )
 
@@ -318,32 +425,53 @@ class AnalysisService:
         except (TypeError, ValueError):
             news.sentiment_score = None
 
-        await self._news_repo.session.flush()
+        # 保存完整分析结果（除 score 外）
+        news.sentiment_detail = {
+            k: v for k, v in result.items()
+            if k != "score" and v is not None
+        }
+
+        # 不在这里 flush——并发分析时多个任务同时 flush 会导致
+        # "Session is already flushing" 错误，由外层调用方统一 commit。
 
     async def batch_analyze_sentiment(
-        self, limit: int = 20, concurrency: int = 3,
-    ) -> int:
-        """Analyze sentiment for news without scores. Returns count processed."""
+        self,
+        limit: int = 20,
+        concurrency: int = 3,
+        force: bool = False,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> tuple[int, list[str]]:
+        """Analyze sentiment for news. Set force=True to re-analyze all."""
         today = date.today()
+        if start_date is None:
+            start_date = today - timedelta(days=3)
+        if end_date is None:
+            end_date = today
         news_items, _ = await self._news_repo.search(
-            start=datetime.combine(today - timedelta(days=3), datetime.min.time()),
-            end=datetime.combine(today, datetime.max.time()),
+            start=datetime.combine(start_date, datetime.min.time()),
+            end=datetime.combine(end_date, datetime.max.time()),
             page=1,
             page_size=limit,
+            sentiment_null=not force,
         )
-
-        unanalyzed = [n for n in news_items if n.sentiment_score is None]
-        if not unanalyzed:
-            return 0
+        targets = list(news_items)
+        if not targets:
+            return (0, [])
 
         sem = asyncio.Semaphore(concurrency)
+        success_count = 0
+        errors: list[str] = []
 
         async def _analyze_one(n):
+            nonlocal success_count
             async with sem:
                 try:
                     await self.analyze_news_sentiment(n.id)
-                except Exception:
+                    success_count += 1
+                except Exception as exc:
                     logger.exception("Sentiment analysis failed for news %s", n.id)
+                    errors.append(f"News {n.id}: {exc}")
 
-        await asyncio.gather(*(_analyze_one(n) for n in unanalyzed))
-        return len(unanalyzed)
+        await asyncio.gather(*(_analyze_one(n) for n in targets))
+        return (success_count, errors)

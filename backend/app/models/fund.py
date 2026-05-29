@@ -20,6 +20,8 @@ class Fund(TimestampMixin, Base):
     established_date: Mapped[date | None] = mapped_column(Date)
     scale: Mapped[float | None] = mapped_column(Numeric(20, 4))
     fund_manager: Mapped[str | None] = mapped_column(String(64))
+    latest_price: Mapped[float | None] = mapped_column(Numeric(12, 4))
+    latest_change_pct: Mapped[float | None] = mapped_column(Numeric(8, 4))
 
     navs = relationship("FundNav", back_populates="fund", lazy="selectin")
     estimates = relationship("FundEstimate", back_populates="fund", lazy="selectin")
@@ -47,15 +49,9 @@ class FundEstimate(TimestampMixin, Base):
     __tablename__ = "fund_estimates"
 
     fund_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("funds.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("funds.id"), nullable=False, unique=True
     )
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     estimate_nav: Mapped[float | None] = mapped_column(Numeric(12, 4))
     estimate_change_pct: Mapped[float | None] = mapped_column(Numeric(8, 4))
-    estimate_change_amount: Mapped[float | None] = mapped_column(Numeric(8, 4))
 
     fund = relationship("Fund", back_populates="estimates")
-
-    __table_args__ = (
-        UniqueConstraint("fund_id", "timestamp", name="uq_fund_estimate_ts"),
-    )

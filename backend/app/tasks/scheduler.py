@@ -15,31 +15,37 @@ scheduler = AsyncIOScheduler()
 
 # Map collector names to task functions
 from app.tasks.collect_tasks import (  # noqa: E402
-    collect_estimate_task,
-    collect_etf_list_task,
     collect_etf_task,
+    collect_fund_estimate_task,
     collect_fund_list_task,
-    collect_fund_nav_task,
+    collect_fund_nav_daily_task,
+    collect_fund_nav_history_task,
     collect_market_sentiment_task,
     collect_news_task,
-    collect_sector_daily_task,
+    collect_sector_batch_daily_task,
+    collect_sector_batch_history_task,
     collect_sector_list_task,
-    collect_sector_money_flow_task,
     collect_sector_realtime_task,
+    collect_news_sentiment_task,
+    collect_recommend_top_picks_task,
+    collect_recommend_dip_buy_task,
 )
 
 TASK_MAP = {
     CollectorName.FUND_LIST.value: collect_fund_list_task,
-    CollectorName.ETF_LIST.value: collect_etf_list_task,
     CollectorName.ETF.value: collect_etf_task,
-    CollectorName.SECTOR.value: collect_sector_realtime_task,
     CollectorName.SECTOR_LIST.value: collect_sector_list_task,
-    CollectorName.SECTOR_DAILY.value: collect_sector_daily_task,
-    CollectorName.SECTOR_MONEY_FLOW.value: collect_sector_money_flow_task,
-    CollectorName.FUND_ESTIMATE.value: collect_estimate_task,
-    CollectorName.FUND_NAV.value: collect_fund_nav_task,
+    CollectorName.FUND_NAV_HISTORY.value: collect_fund_nav_history_task,
+    CollectorName.FUND_NAV_DAILY.value: collect_fund_nav_daily_task,
     CollectorName.NEWS.value: collect_news_task,
     CollectorName.MARKET_SENTIMENT.value: collect_market_sentiment_task,
+    CollectorName.SECTOR_BATCH_HISTORY.value: collect_sector_batch_history_task,
+    CollectorName.SECTOR_BATCH_DAILY.value: collect_sector_batch_daily_task,
+    CollectorName.FUND_ESTIMATE.value: collect_fund_estimate_task,
+    CollectorName.SECTOR_REALTIME.value: collect_sector_realtime_task,
+    CollectorName.NEWS_SENTIMENT.value: collect_news_sentiment_task,
+    CollectorName.RECOMMEND_TOP_PICKS.value: collect_recommend_top_picks_task,
+    CollectorName.RECOMMEND_DIP_BUY.value: collect_recommend_dip_buy_task,
 }
 
 
@@ -74,11 +80,16 @@ def _schedule_config_to_cron(config: dict) -> tuple[str, str, str, str, str]:
     if mode == "interval":
         interval_mins = config.get("interval_minutes")
         if interval_mins and interval_mins >= 1:
+            # 从激活时间窗口取起始分钟作为 cron 基准分钟
+            base_minute = 0
+            active_start = config.get("active_start_time")
+            if active_start and isinstance(active_start, str) and ":" in active_start:
+                base_minute = int(active_start.split(":")[1])
             if interval_mins >= 1440:
                 minute, hour = "7", "2"
             elif interval_mins >= 60:
-                hour = "13"
-                minute = f"*/{max(1, interval_mins // 60)}"
+                minute = str(base_minute)
+                hour = f"*/{max(1, interval_mins // 60)}"
             else:
                 minute = f"*/{max(1, interval_mins)}"
                 hour = "*"
@@ -105,7 +116,15 @@ async def register_jobs() -> None:
     for name, task_fn in TASK_MAP.items():
         setting = settings_map.get(name)
         if setting and setting.schedule_config:
-            cron = _schedule_config_to_cron(setting.schedule_config)
+            config = dict(setting.schedule_config)
+            # If interval mode has no interval_minutes, derive from interval_seconds
+            if config.get("mode", "interval") == "interval" and not config.get("interval_minutes"):
+                default_secs = (
+                    setting.interval_seconds
+                    or DEFAULT_COLLECTOR_INTERVALS.get(CollectorName(name), 86400)
+                )
+                config["interval_minutes"] = max(1, default_secs // 60)
+            cron = _schedule_config_to_cron(config)
         else:
             interval = (
                 setting.interval_seconds

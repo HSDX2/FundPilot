@@ -1,12 +1,12 @@
 import uuid
 from collections.abc import Sequence
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.sector import Sector, SectorMoneyFlow, SectorSnapshot
+from app.models.sector import Sector, SectorMoneyFlow, SectorRealtime, SectorSnapshot
 from app.repositories.base import BaseRepository
 
 
@@ -36,8 +36,8 @@ class SectorRepo(BaseRepository[Sector]):
             conditions.append(Sector.category == category)
 
         if conditions:
-            query = query.where(or_(*conditions))
-            count_query = count_query.where(or_(*conditions))
+            query = query.where(and_(*conditions))
+            count_query = count_query.where(and_(*conditions))
 
         count_result = await self.session.execute(count_query)
         total = count_result.scalar() or 0
@@ -49,7 +49,24 @@ class SectorRepo(BaseRepository[Sector]):
         return items, total
 
     async def get_all_active(self) -> Sequence[Sector]:
-        stmt = select(Sector)
+        from sqlalchemy.orm import noload
+
+        stmt = select(Sector).options(
+            noload(Sector.snapshots),
+            noload(Sector.money_flows),
+            noload(Sector.realtime),
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def get_active_by_category(self, category: str) -> Sequence[Sector]:
+        from sqlalchemy.orm import noload
+
+        stmt = select(Sector).where(Sector.category == category).options(
+            noload(Sector.snapshots),
+            noload(Sector.money_flows),
+            noload(Sector.realtime),
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -110,8 +127,8 @@ class SectorSnapshotRepo(BaseRepository[SectorSnapshot]):
     async def get_by_sector_and_time_range(
         self,
         sector_id: uuid.UUID,
-        start: datetime | None = None,
-        end: datetime | None = None,
+        start: date | None = None,
+        end: date | None = None,
     ) -> Sequence[SectorSnapshot]:
         stmt = select(SectorSnapshot).where(SectorSnapshot.sector_id == sector_id)
         if start:
@@ -135,9 +152,46 @@ class SectorSnapshotRepo(BaseRepository[SectorSnapshot]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_latest_before_date(
+        self,
+        sector_id: uuid.UUID,
+        before_date: date,
+    ) -> SectorSnapshot | None:
+        """获取指定日期之前的最近一条快照（用于计算涨跌幅基准）。"""
+        stmt = (
+            select(SectorSnapshot)
+            .where(
+                SectorSnapshot.sector_id == sector_id,
+                SectorSnapshot.timestamp < before_date,
+            )
+            .order_by(SectorSnapshot.timestamp.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_latest_per_sector(
+        self,
+        sector_ids: Sequence[uuid.UUID],
+    ) -> Sequence[SectorSnapshot]:
+        """Get the latest snapshot for each sector using DISTINCT ON.
+
+        Uses PostgreSQL ``DISTINCT ON (sector_id)`` with ``ORDER BY
+        sector_id, timestamp DESC`` for a single index scan — much faster
+        than the subquery + JOIN approach on large tables.
+        """
+        stmt = (
+            select(SectorSnapshot)
+            .where(SectorSnapshot.sector_id.in_(sector_ids))
+            .distinct(SectorSnapshot.sector_id)
+            .order_by(SectorSnapshot.sector_id, SectorSnapshot.timestamp.desc())
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
     async def get_rank_by_timestamp(
         self,
-        timestamp: datetime,
+        timestamp: date,
         category: str | None = None,
         limit: int = 20,
     ) -> Sequence[tuple[SectorSnapshot, Sector]]:
@@ -163,7 +217,7 @@ class SectorSnapshotRepo(BaseRepository[SectorSnapshot]):
         """
         added = 0
         updated = 0
-        seen: set[tuple[uuid.UUID, datetime]] = set()
+        seen: set[tuple[uuid.UUID, date]] = set()
         for record in records:
             sector_id = record.get("sector_id")
             timestamp = record.get("timestamp")
@@ -207,10 +261,44 @@ class SectorMoneyFlowRepo(BaseRepository[SectorMoneyFlow]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def batch_upsert(self, records: list[dict[str, Any]]) -> tuple[int, int]:
-        """Bulk upsert sector money flow. Returns (added, updated).
+    async def get_latest_complete_date(
+        self,
+        sector_id: uuid.UUID,
+    ) -> date | None:
+        """获取中单/散户资金流向数据有值的最新日期（用于增量回补起始点）。"""
+        stmt = select(SectorMoneyFlow.date).where(
+            SectorMoneyFlow.sector_id == sector_id,
+            SectorMoneyFlow.retail_net_inflow.isnot(None),
+            SectorMoneyFlow.middle_net_inflow.isnot(None),
+        ).order_by(SectorMoneyFlow.date.desc()).limit(1)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_all_date_ranges(
+        self,
+    ) -> dict[uuid.UUID, tuple[date, date]]:
+        """返回所有板块资金流数据的最早和最晚日期。
+
+        一次 SQL 查询，结果按 sector_id 索引。
+        """
+        stmt = select(
+            SectorMoneyFlow.sector_id,
+            func.min(SectorMoneyFlow.date),
+            func.max(SectorMoneyFlow.date),
+        ).group_by(SectorMoneyFlow.sector_id)
+        result = await self.session.execute(stmt)
+        return {
+            row[0]: (row[1], row[2])
+            for row in result.all()
+        }
+
+    async def batch_upsert(
+        self, records: list[dict[str, Any]],
+    ) -> tuple[int, int]:
+        """批量写入或更新板块资金流向。返回 (新增数, 更新数)。
 
         Deduplication key: (sector_id, date).
+        已有数据会被直接覆盖。
         """
         added = 0
         updated = 0
@@ -237,6 +325,50 @@ class SectorMoneyFlowRepo(BaseRepository[SectorMoneyFlow]):
                 updated += 1
             else:
                 self.session.add(SectorMoneyFlow(**record))
+                added += 1
+                await self.session.flush()
+        return added, updated
+
+
+class SectorRealtimeRepo(BaseRepository[SectorRealtime]):
+    def __init__(self, session: AsyncSession):
+        super().__init__(session, SectorRealtime)
+
+    async def get_by_sector(self, sector_id: uuid.UUID) -> SectorRealtime | None:
+        stmt = select(SectorRealtime).where(SectorRealtime.sector_id == sector_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_by_sectors(
+        self, sector_ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, SectorRealtime]:
+        """批量查询多个板块的实时行情，返回 {sector_id: record} 字典。"""
+        if not sector_ids:
+            return {}
+        stmt = select(SectorRealtime).where(
+            SectorRealtime.sector_id.in_(sector_ids),
+        )
+        result = await self.session.execute(stmt)
+        return {r.sector_id: r for r in result.scalars().all()}
+
+    async def batch_upsert(self, records: list[dict]) -> tuple[int, int]:
+        """批量写入或更新板块实时行情。返回 (新增数, 更新数)。"""
+        added = 0
+        updated = 0
+        seen: set[uuid.UUID] = set()
+        for record in records:
+            sector_id = record.get("sector_id")
+            if not sector_id or sector_id in seen:
+                continue
+            seen.add(sector_id)
+            existing = await self.get_by_sector(sector_id)
+            if existing:
+                for key, value in record.items():
+                    if hasattr(existing, key) and value is not None:
+                        setattr(existing, key, value)
+                updated += 1
+            else:
+                self.session.add(SectorRealtime(**record))
                 added += 1
                 await self.session.flush()
         return added, updated
