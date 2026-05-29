@@ -16,6 +16,7 @@ class AIProvider(TimestampMixin, Base):
     api_base_url: Mapped[str | None] = mapped_column(Text)
     model_name: Mapped[str | None] = mapped_column(String(64))
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    web_search_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     extra_config: Mapped[dict | None] = mapped_column(JSON, default=None)
 
 

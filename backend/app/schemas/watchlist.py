@@ -15,9 +15,9 @@ class WatchedFundResponse(BaseModel):
     fund_code: str = Field(description="基金代码")
     fund_name: str = Field(description="基金名称")
     fund_type: str | None = Field(default=None, description="基金类型")
-    latest_price: Decimal | None = Field(default=None, description="ETF 最新价")
-    latest_change_pct: Decimal | None = Field(default=None, description="ETF 涨跌幅")
-    holding_amount: Decimal | None = Field(default=None, description="持仓金额（元）")
+    estimate_nav: Decimal | None = Field(default=None, description="盘中估值")
+    estimate_change_pct: Decimal | None = Field(default=None, description="估算涨跌幅")
+    holding_shares: Decimal | None = Field(default=None, description="持仓份额")
     added_at: datetime = Field(description="添加时间")
 
     model_config = {"from_attributes": True}
@@ -26,7 +26,7 @@ class WatchedFundResponse(BaseModel):
 class UpdateWatchedFundRequest(BaseModel):
     """更新关注基金请求."""
 
-    holding_amount: Decimal | None = Field(default=None, description="持仓金额（元）")
+    holding_shares: Decimal | None = Field(default=None, description="持仓份额")
 
 
 class WatchedSectorResponse(BaseModel):

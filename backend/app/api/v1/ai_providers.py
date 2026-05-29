@@ -80,6 +80,7 @@ async def create_ai_provider(
         api_base_url=body.api_base_url,
         model_name=body.model_name,
         is_active=False,
+        web_search_enabled=body.web_search_enabled,
         extra_config=body.extra_config,
     )
     if provider.id is None:
@@ -135,7 +136,7 @@ async def update_ai_provider(
     if provider is None:
         raise AIProviderNotFoundError(provider_id)
 
-    updates = body.model_dump(exclude_none=True)
+    updates = body.model_dump(exclude_unset=True)
     if updates:
         await repo.update(pid, updates)
         await repo.session.flush()

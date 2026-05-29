@@ -20,6 +20,7 @@ def _load_defaults() -> dict[str, str]:
         CHAT_SYSTEM,
         FUND_ADVICE_SYSTEM,
         FUND_ADVICE_USER,
+        NEWS_BATCH_SENTIMENT_USER,
         NEWS_SENTIMENT_SYSTEM,
         NEWS_SENTIMENT_USER,
         RECOMMEND_DIP_BUY_SYSTEM,
@@ -45,6 +46,7 @@ def _load_defaults() -> dict[str, str]:
         "recommend_top_picks_user": RECOMMEND_TOP_PICKS_USER,
         "recommend_dip_buy_system": RECOMMEND_DIP_BUY_SYSTEM,
         "recommend_dip_buy_user": RECOMMEND_DIP_BUY_USER,
+        "news_batch_sentiment_user": NEWS_BATCH_SENTIMENT_USER,
     }
     return DEFAULTS
 
@@ -63,6 +65,7 @@ PROMPT_LABELS: dict[str, str] = {
     "recommend_top_picks_user": "综合推荐 — 用户提示词",
     "recommend_dip_buy_system": "加仓推荐 — 系统提示词",
     "recommend_dip_buy_user": "加仓推荐 — 用户提示词",
+    "news_batch_sentiment_user": "新闻情绪 — 批量分析用户提示词",
 }
 
 

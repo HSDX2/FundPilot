@@ -18,6 +18,7 @@ class AIProvider(ABC):
         messages: list[dict[str, str]],
         temperature: float = 0.3,
         max_tokens: int = 4096,
+        tools: list[dict] | None = None,
     ) -> str:
         """Send a chat completion request and return the response text."""
         ...
@@ -29,6 +30,7 @@ class AIProvider(ABC):
         user_prompt: str,
         temperature: float = 0.3,
         max_tokens: int = 4096,
+        tools: list[dict] | None = None,
     ) -> dict:
         """Run analysis and return structured JSON result.
 

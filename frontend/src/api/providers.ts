@@ -9,6 +9,7 @@ export interface AIProviderItem {
   api_base_url: string;
   model_name: string;
   is_active: boolean;
+  web_search_enabled: boolean;
   extra_config: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;

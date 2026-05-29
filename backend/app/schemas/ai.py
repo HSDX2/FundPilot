@@ -17,6 +17,9 @@ class AIProviderCreate(BaseModel):
     )
     api_key: str = Field(min_length=1, description="API 密钥")
     api_base_url: str = Field(min_length=1, description="API endpoint URL")
+    web_search_enabled: bool = Field(
+        default=False, description="是否启用联网搜索",
+    )
     model_name: str = Field(min_length=1, description="默认模型名，如 deepseek-chat")
     extra_config: dict | None = Field(
         default=None,
@@ -38,6 +41,9 @@ class AIProviderUpdate(BaseModel):
     extra_config: dict | None = Field(
         default=None, description="额外参数"
     )
+    web_search_enabled: bool | None = Field(
+        default=None, description="是否启用联网搜索",
+    )
 
 
 class AIProviderResponse(BaseModel):
@@ -49,6 +55,7 @@ class AIProviderResponse(BaseModel):
     api_base_url: str | None = Field(default=None, description="API endpoint URL")
     model_name: str | None = Field(default=None, description="默认模型名")
     is_active: bool = Field(default=False, description="是否为当前激活")
+    web_search_enabled: bool = Field(default=False, description="是否启用联网搜索")
     extra_config: dict | None = Field(default=None, description="额外参数")
 
     model_config = {"from_attributes": True}

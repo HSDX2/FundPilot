@@ -62,7 +62,7 @@ async def list_watched_funds(session: AsyncSession = Depends(get_db)):
             "fund_type": fund.type if fund else None,
             "estimate_nav": float(est.estimate_nav) if est and est.estimate_nav is not None else None,
             "estimate_change_pct": float(est.estimate_change_pct) if est and est.estimate_change_pct is not None else None,
-            "holding_amount": wf.holding_amount,
+            "holding_shares": float(wf.holding_shares) if wf.holding_shares is not None else None,
             "added_at": wf.added_at,
         })
     return ApiResponse.success({"items": result, "total": len(result)})
@@ -113,10 +113,10 @@ async def update_watched_fund(
     wf = await repo.get_by_fund_id(fid)
     if wf is None:
         return ApiResponse.error("NOT_WATCHED", "未关注该基金", status_code=404)
-    wf.holding_amount = body.holding_amount
+    wf.holding_shares = body.holding_shares
     await session.commit()
     return ApiResponse.success(
-        {"holding_amount": wf.holding_amount},
+        {"holding_shares": float(wf.holding_shares) if wf.holding_shares is not None else None},
         message="已更新",
     )
 

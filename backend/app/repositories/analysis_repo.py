@@ -46,7 +46,7 @@ class AnalysisReportRepo(BaseRepository[AnalysisReport]):
         count_q = select(func.count(AnalysisReport.id)).where(and_(*conditions))
         total_result = await self.session.execute(count_q)
         total = total_result.scalar() or 0
-        query = query.order_by(AnalysisReport.date.desc())
+        query = query.order_by(AnalysisReport.created_at.desc())
         query = query.offset((page - 1) * page_size).limit(page_size)
         result = await self.session.execute(query)
         return list(result.scalars().all()), total
@@ -78,7 +78,7 @@ class AnalysisReportRepo(BaseRepository[AnalysisReport]):
         total_result = await self.session.execute(count_q)
         total = total_result.scalar() or 0
 
-        query = base.order_by(AnalysisReport.date.desc())
+        query = base.order_by(AnalysisReport.created_at.desc())
         query = query.offset((page - 1) * page_size).limit(page_size)
         result = await self.session.execute(query)
         return result.all(), total
@@ -182,7 +182,7 @@ class FundAdviceRepo(BaseRepository[FundAdvice]):
         total_result = await self.session.execute(count_q)
         total = total_result.scalar() or 0
 
-        query = base.order_by(FundAdvice.date.desc())
+        query = base.order_by(FundAdvice.created_at.desc())
         query = query.offset((page - 1) * page_size).limit(page_size)
         result = await self.session.execute(query)
         return result.all(), total

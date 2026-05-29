@@ -9,7 +9,7 @@ export interface WatchedFund {
   fund_type: string | null;
   estimate_nav: number | null;
   estimate_change_pct: number | null;
-  holding_amount: number | null;
+  holding_shares: number | null;
   added_at: string;
 }
 
@@ -41,8 +41,8 @@ export async function unwatchFund(fundId: string): Promise<ApiEnvelope<null>> {
 
 export async function updateWatchedFund(
   fundId: string,
-  body: { holding_amount: number | null },
-): Promise<ApiEnvelope<{ holding_amount: number | null }>> {
+  body: { holding_shares: number | null },
+): Promise<ApiEnvelope<{ holding_shares: number | null }>> {
   return api.put(`watchlist/funds/${fundId}`, { json: body }).json();
 }
 

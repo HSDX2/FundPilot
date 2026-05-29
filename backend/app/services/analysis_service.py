@@ -71,10 +71,32 @@ class AnalysisService:
         self._watchlist_repo = watchlist_repo
         self._fund_ds = fund_datasource or FundDataSource()
 
+    _web_search_tool: list[dict] | None = None
+
     async def _get_provider(self) -> AIProvider:
         provider_model = await self._ai_provider_repo.get_active()
         if provider_model is None:
             raise RuntimeError("No active AI provider configured")
+
+        # 缓存 web_search 工具配置
+        if getattr(provider_model, "web_search_enabled", False):
+            self._web_search_tool = [{
+                "type": "function",
+                "function": {
+                    "name": "web_search",
+                    "description": "搜索互联网获取最新信息",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "搜索关键词"},
+                        },
+                        "required": ["query"],
+                    },
+                },
+            }]
+        else:
+            self._web_search_tool = None
+
         return OpenAICompatibleProvider(
             base_url=provider_model.api_base_url,
             api_key=provider_model.api_key,
@@ -180,6 +202,7 @@ class AnalysisService:
         result = await ai.analyze(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
+            tools=self._web_search_tool,
         )
 
         report = AnalysisReport(
@@ -332,28 +355,31 @@ class AnalysisService:
         user_prompt_template = await self._get_user_prompt(
             "fund_advice_user", FUND_ADVICE_USER,
         )
+        # 持仓份额（取自关注列表）
+        holding_shares_str = "未设置"
+        wf = await self._watchlist_repo.get_by_fund_id(fund_id)
+        if wf and wf.holding_shares is not None:
+            holding_shares_str = f"{float(wf.holding_shares):.2f} 份"
+
+        nav_date = str(navs[0].date) if navs else "未知"
         user_prompt = user_prompt_template.format(
             fund_name=fund.name,
             fund_code=fund.code,
             fund_type=fund.type or "未知",
-            latest_nav=navs[0].nav if navs else "N/A",
-            accumulated_nav=navs[0].accumulated_nav if navs else "N/A",
+            latest_nav=f"{navs[0].nav:.4f}" if navs else "N/A",
+            nav_date=nav_date,
+            accumulated_nav=f"{navs[0].accumulated_nav:.4f}" if navs and navs[0].accumulated_nav else "N/A",
             nav_history=nav_history,
             estimate=estimate_str,
             sector_performance=await self._get_fund_sector_performance(fund),
             news_titles=news_titles,
+            holding_shares=holding_shares_str,
         )
-
-        # 追加持仓金额（取自关注列表）
-        holding_amount_str = "未设置"
-        wf = await self._watchlist_repo.get_by_fund_id(fund_id)
-        if wf and wf.holding_amount is not None:
-            holding_amount_str = f"{float(wf.holding_amount):.2f} 元"
-        user_prompt += f"\n\n持仓金额：{holding_amount_str}"
 
         result = await ai.analyze(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
+            tools=self._web_search_tool,
         )
 
         action = result.get("action", "hold")
@@ -417,6 +443,7 @@ class AnalysisService:
         result = await ai.analyze(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
+            tools=self._web_search_tool,
         )
 
         score_val = result.get("score")

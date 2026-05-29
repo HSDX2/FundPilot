@@ -54,17 +54,22 @@ class OpenAICompatibleProvider(AIProvider):
         messages: list[dict[str, str]],
         temperature: float = 0.3,
         max_tokens: int = DEFAULT_MAX_TOKENS,
+        tools: list[dict] | None = None,
     ) -> str:
         logger.debug(
-            "Calling %s/%s: %d messages",
+            "Calling %s/%s: %d messages%s",
             self._provider_type, self._model, len(messages),
+            " (with tools)" if tools else "",
         )
-        resp = await self._client.chat.completions.create(
-            model=self._model,
-            messages=messages,  # type: ignore[arg-type]
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+        kwargs: dict = {
+            "model": self._model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if tools:
+            kwargs["tools"] = tools
+        resp = await self._client.chat.completions.create(**kwargs)
         choice = resp.choices[0]
         content = choice.message.content or ""
         return content
@@ -75,30 +80,74 @@ class OpenAICompatibleProvider(AIProvider):
         user_prompt: str,
         temperature: float = 0.3,
         max_tokens: int = DEFAULT_MAX_TOKENS,
+        tools: list[dict] | None = None,
     ) -> dict[str, Any]:
         """Send a structured analysis request with JSON output.
 
         Returns parsed dict on success.  Returns {"error": ..., "raw": ...}
         on parse failure so callers don't crash on malformed responses.
+        Optional tools (e.g. web_search) are passed to the model.
         """
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-        text = await self.chat(
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        try:
-            return json.loads(text)  # type: ignore[no-any-return]
-        except json.JSONDecodeError:
-            logger.warning(
-                "%s returned non-JSON response (first 200 chars): %s",
-                self._provider_type,
-                text[:200],
+
+        def _parse_json_safe(text: str) -> dict:
+            """安全解析 AI 返回文本为 JSON，剥离 markdown 代码块标记。"""
+            text = text.strip()
+            if text.startswith("```"):
+                for marker in ("```json\n", "```\n"):
+                    if text.startswith(marker):
+                        text = text[len(marker):]
+                        break
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                logger.warning(
+                    "%s returned non-JSON (first 200): %s",
+                    self._provider_type, text[:200],
+                )
+                return {"error": "JSON_PARSE_FAILED", "raw": text}
+
+        # 第一轮：带 tools 调用（AI 可联网搜索）
+        if tools:
+            resp = await self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=tools,
             )
-            return {"error": "JSON_PARSE_FAILED", "raw": text}
+            choice = resp.choices[0]
+            raw_content = choice.message.content or ""
+            # DeepSeek 可能用 XML 格式返回 tool call
+            if choice.message.tool_calls or "<invoke name=" in raw_content:
+                if choice.message.tool_calls:
+                    for tc in choice.message.tool_calls:
+                        # DeepSeek 思考模式要求 assistant 消息必须含 reasoning_content
+                        msg = {"role": "assistant", "content": None, "tool_calls": [{
+                            "id": tc.id, "type": "function",
+                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        }]}
+                        msg["reasoning_content"] = ""
+                        messages.append(msg)
+                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": "搜索完成"})
+                else:
+                    messages.append({"role": "assistant", "content": raw_content})
+                    messages.append({"role": "user", "content": "请结合搜索结果以JSON格式回复"})
+                resp = await self._client.chat.completions.create(
+                    model=self._model, messages=messages, temperature=temperature, max_tokens=max_tokens,
+                )
+                return _parse_json_safe(resp.choices[0].message.content or "")
+            return _parse_json_safe(raw_content)
+
+        # 无工具模式：直接请求 JSON
+        text = await self.chat(messages=messages, temperature=temperature, max_tokens=max_tokens)
+        return _parse_json_safe(text)
 
 
 # ── Provider preset registry ─────────────────────────────────────────

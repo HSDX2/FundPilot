@@ -59,10 +59,31 @@ class RecommendationService:
         self._rec_repo = recommendation_repo
         self._fund_ds = fund_datasource or FundDataSource()
 
+    _web_search_tool: list[dict] | None = None
+
     async def _get_provider(self) -> OpenAICompatibleProvider:
         provider = await self._ai_provider_repo.get_active()
         if provider is None:
             raise RuntimeError("No active AI provider configured")
+
+        if getattr(provider, "web_search_enabled", False):
+            self._web_search_tool = [{
+                "type": "function",
+                "function": {
+                    "name": "web_search",
+                    "description": "搜索互联网获取最新信息",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "搜索关键词"},
+                        },
+                        "required": ["query"],
+                    },
+                },
+            }]
+        else:
+            self._web_search_tool = None
+
         return OpenAICompatibleProvider(
             base_url=provider.api_base_url,
             api_key=provider.api_key,
@@ -278,7 +299,10 @@ class RecommendationService:
         )
 
         try:
-            result = await ai.analyze(system_prompt=system, user_prompt=user)
+            result = await ai.analyze(
+                system_prompt=system, user_prompt=user,
+                tools=self._web_search_tool,
+            )
         except Exception as e:
             logger.exception("AI top picks analysis failed")
             raise
@@ -347,7 +371,10 @@ class RecommendationService:
         )
 
         try:
-            result = await ai.analyze(system_prompt=system, user_prompt=user)
+            result = await ai.analyze(
+                system_prompt=system, user_prompt=user,
+                tools=self._web_search_tool,
+            )
         except Exception as e:
             logger.exception("AI dip buy analysis failed")
             raise

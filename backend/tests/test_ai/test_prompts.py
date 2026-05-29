@@ -65,6 +65,7 @@ class TestFundAdvicePrompts:
         assert "{fund_code}" in template
         assert "{fund_type}" in template
         assert "{latest_nav}" in template
+        assert "{nav_date}" in template
         assert "{nav_history}" in template
         assert "{estimate}" in template
         assert "{news_titles}" in template
@@ -75,11 +76,13 @@ class TestFundAdvicePrompts:
             fund_code="000001",
             fund_type="股票型",
             latest_nav="1.2345",
+            nav_date="2026-05-29",
             accumulated_nav="2.3456",
             nav_history="- 2026-05-23: 净值 1.2345",
             estimate="估值: 1.2400, 涨跌: +0.45%",
             sector_performance="新能源: +2.1%",
             news_titles="- 利好消息",
+            holding_shares="1000 份",
         )
         assert "测试基金" in text
         assert "000001" in text

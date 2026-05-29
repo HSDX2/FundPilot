@@ -176,7 +176,7 @@ CREATE TABLE public.watched_funds (
     id              uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     fund_id         uuid NOT NULL REFERENCES public.funds(id),
     added_at        timestamp with time zone DEFAULT now() NOT NULL,
-    holding_amount  numeric(16,2),
+    holding_shares  numeric(16,2),
     CONSTRAINT watched_funds_fund_id_key UNIQUE (fund_id)
 );
 
@@ -231,6 +231,7 @@ CREATE TABLE public.ai_providers (
     api_base_url    text,
     model_name      character varying(64),
     is_active       boolean NOT NULL,
+    web_search_enabled boolean DEFAULT FALSE,
     extra_config    jsonb,
     created_at      timestamp with time zone DEFAULT now() NOT NULL,
     updated_at      timestamp with time zone DEFAULT now() NOT NULL

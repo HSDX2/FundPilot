@@ -99,8 +99,8 @@ async def _format_context(context_data: dict) -> str:
             lines.append(f"- {n.get('title', 'N/A')}（{n.get('published_at', '')}）")
         parts.append("\n".join(lines))
 
-    if context_data.get("holding_amount") is not None:
-        parts.append(f"\n## 持仓金额\n{context_data['holding_amount']:.2f} 元")
+    if context_data.get("holding_shares") is not None:
+        parts.append(f"\n## 持仓份额\n{context_data['holding_shares']:.2f} 份")
 
     return "\n".join(parts)
 
@@ -173,8 +173,8 @@ class ChatService:
 
                 # Holding amount
                 wf = await self._watchlist_repo.get_by_fund_id(fund.id)
-                if wf and wf.holding_amount is not None:
-                    data["holding_amount"] = float(wf.holding_amount)
+                if wf and wf.holding_shares is not None:
+                    data["holding_shares"] = float(wf.holding_shares)
 
                 # Related news (by fund name)
                 items, _ = await self._news_repo.search(keyword=fund.name, page=1, page_size=5)

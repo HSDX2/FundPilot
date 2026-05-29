@@ -3,8 +3,9 @@ import {
   Modal, Input, Button, Typography, Switch, Space, Spin, Tag,
 } from "antd";
 import {
-  SendOutlined, RobotOutlined, GlobalOutlined,
+  SendOutlined, RobotOutlined, GlobalOutlined, SettingOutlined,
 } from "@ant-design/icons";
+import { PromptEditor } from "@/components/PromptEditor";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { chatStream, destroySession, type ChatContext } from "@/api/chat";
@@ -28,6 +29,7 @@ export function ChatDialog({ open, onClose, context }: Props) {
   ]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [promptOpen, setPromptOpen] = useState(false);
   const [webSearch, setWebSearch] = useState(context.web_search ?? false);
   const sessionRef = useRef<string | undefined>(undefined);
   const abortRef = useRef<AbortController | null>(null);
@@ -159,6 +161,11 @@ export function ChatDialog({ open, onClose, context }: Props) {
       onCancel={handleClose}
       footer={null}
       width={720}
+      extra={
+        <Button size="small" icon={<SettingOutlined />} onClick={() => setPromptOpen(true)}>
+          提示词设置
+        </Button>
+      }
       destroyOnHidden
       styles={{ body: { padding: 0 } }}
     >
@@ -276,6 +283,7 @@ export function ChatDialog({ open, onClose, context }: Props) {
           </Button>
         </div>
       </div>
+      <PromptEditor open={promptOpen} onClose={() => setPromptOpen(false)} filter="chat" />
     </Modal>
   );
 }

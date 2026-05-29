@@ -103,11 +103,13 @@ export function Watchlist() {
   // 更新持仓金额
   const { mutate: saveAmount, isPending: savingAmount } = useMutation({
     mutationFn: ({ fundId, amount }: { fundId: string; amount: number | null }) =>
-      updateWatchedFund(fundId, { holding_amount: amount }),
+      updateWatchedFund(fundId, { holding_shares: amount }),
     onSuccess: () => {
-      message.success("持仓金额已更新");
+      message.success("持仓份额已更新");
       setEditModalOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+      setEditFundId("");
+      queryClient.invalidateQueries({ queryKey: ["watchlist", "funds"] });
+      queryClient.invalidateQueries({ queryKey: ["watchlist", "sectors"] });
     },
     onError: () => message.error("更新失败"),
   });
@@ -158,13 +160,13 @@ export function Watchlist() {
       },
     },
     {
-      title: "持仓金额",
-      dataIndex: "holding_amount",
-      key: "holding_amount",
+      title: "持仓份额",
+      dataIndex: "holding_shares",
+      key: "holding_shares",
       width: 120,
       align: "right" as const,
       render: (v: number | null) =>
-        v != null ? `${Number(v).toLocaleString()} 元` : "-",
+        v != null ? `${Number(v).toFixed(2)} 份` : "-",
     },
     {
       title: "关注时间",
@@ -186,7 +188,7 @@ export function Watchlist() {
             onClick={(e) => {
               e.stopPropagation();
               setEditFundId(r.fund_id);
-              setEditAmount(r.holding_amount);
+              setEditAmount(r.holding_shares);
               setEditModalOpen(true);
             }}
           />
@@ -347,9 +349,9 @@ export function Watchlist() {
         ]}
       />
 
-      {/* 编辑持仓金额弹窗 */}
+      {/* 编辑持仓份额弹窗 */}
       <Modal
-        title="编辑持仓金额"
+        title="编辑持仓份额"
         open={editModalOpen}
         onCancel={() => setEditModalOpen(false)}
         onOk={() => saveAmount({ fundId: editFundId, amount: editAmount })}
@@ -358,18 +360,17 @@ export function Watchlist() {
         cancelText="取消"
       >
         <div style={{ marginTop: 16 }}>
-          <Text strong>持仓金额（元）：</Text>
+          <Text strong>持仓份额：</Text>
           <InputNumber
             value={editAmount}
             onChange={(v) => setEditAmount(v ?? null)}
             min={0}
+            step={0.01}
             style={{ width: "100%", marginTop: 8 }}
-            placeholder="输入持仓金额"
-            formatter={(value) => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-            parser={(value) => value?.replace(/,/g, "") as unknown as number}
+            placeholder="输入持仓份额"
           />
           <Text type="secondary" style={{ display: "block", marginTop: 8 }}>
-            设置持仓金额后，AI 分析时会参考该数据给出更精准的建议
+            设置持仓份额后，AI 分析时会参考该数据给出更精准的建议
           </Text>
         </div>
       </Modal>

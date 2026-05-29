@@ -22,7 +22,7 @@ class WatchedFund(Base):
     added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(),
     )
-    holding_amount: Mapped[float | None] = mapped_column(
+    holding_shares: Mapped[float | None] = mapped_column(
         Numeric(16, 2), default=None, nullable=True,
     )
 

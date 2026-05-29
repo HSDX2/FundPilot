@@ -20,6 +20,7 @@ import {
   EditOutlined,
   DeleteOutlined,
   ApiOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import { useState } from "react";
 import {
@@ -30,6 +31,7 @@ import {
   activateProvider,
   testProviderConnection,
 } from "@/api/providers";
+import { PromptEditor } from "@/components/PromptEditor";
 import type { AIProviderItem } from "@/api/providers";
 
 const PROVIDER_TYPES = [
@@ -97,6 +99,8 @@ export function AIProviders() {
     onError: () => message.error("激活失败"),
   });
 
+  const [promptOpen, setPromptOpen] = useState(false);
+
   const testMutation = useMutation({
     mutationFn: testProviderConnection,
     onSuccess: (res) => {
@@ -142,8 +146,15 @@ export function AIProviders() {
       width: 100,
       render: (v: string) => <Tag>{v}</Tag>,
     },
-    { title: "模型", dataIndex: "model_name", key: "model_name", width: 140, ellipsis: true },
+    { title: "模型", dataIndex: "model_name", key: "model_name", width: 180, ellipsis: true },
     { title: "API Base", dataIndex: "api_base_url", key: "api_base_url", ellipsis: true },
+    {
+      title: "联网搜索",
+      dataIndex: "web_search_enabled",
+      key: "web_search",
+      width: 100,
+      render: (v: boolean) => v ? <Tag color="green">启用</Tag> : <Tag>禁用</Tag>,
+    },
     {
       title: "状态",
       dataIndex: "is_active",
@@ -221,14 +232,15 @@ export function AIProviders() {
   return (
     <div>
       <h2>AI Provider 配置</h2>
-      <Button
-        type="primary"
-        icon={<PlusOutlined />}
-        onClick={handleOpenCreate}
-        style={{ marginBottom: 16 }}
-      >
-        添加 Provider
-      </Button>
+      <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
+          添加 Provider
+        </Button>
+        <Button icon={<SettingOutlined />} onClick={() => setPromptOpen(true)}>
+          提示词设置
+        </Button>
+      </div>
+      <PromptEditor open={promptOpen} onClose={() => setPromptOpen(false)} />
       <Table
         columns={columns}
         dataSource={data ?? []}
@@ -283,6 +295,14 @@ export function AIProviders() {
             rules={[{ required: true, message: "请输入模型名称" }]}
           >
             <Input placeholder="deepseek-chat" />
+          </Form.Item>
+          <Form.Item name="web_search_enabled" label="联网搜索" initialValue={false}>
+            <Select
+              options={[
+                { value: true, label: "启用" },
+                { value: false, label: "禁用" },
+              ]}
+            />
           </Form.Item>
         </Form>
       </Modal>
