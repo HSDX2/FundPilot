@@ -85,21 +85,24 @@ fundpilot collect settings
 fundpilot collect settings fund_list --interval 86400 --active
 ```
 
-### 可用采集器
+### 可用采集器（14 个）
 
 | 名称 | 描述 | 默认间隔 |
 |------|------|---------|
 | `fund_list` | 基金列表 | 24h |
-| `etf_list` | ETF 列表 | 24h |
 | `etf` | ETF 实时行情 | 30s |
-| `sector` | 板块实时行情 | 60s |
 | `sector_list` | 板块列表 | 24h |
-| `sector_daily` | 板块每日数据 | 24h |
-| `sector_money_flow` | 板块资金流向 | 24h |
-| `fund_estimate` | 基金估值 | 5min |
-| `fund_nav` | 基金净值 | 24h |
+| `fund_nav_history` | 基金净值历史 | 24h |
+| `fund_nav_daily` | 基金净值每日 | 24h |
 | `news` | 新闻采集 | 10min |
 | `market_sentiment` | 市场情绪 | 24h |
+| `sector_batch_history` | 板块历史数据 | 24h |
+| `sector_batch_daily` | 板块每日数据 | 24h |
+| `fund_estimate` | 基金估值 | 5min |
+| `sector_realtime` | 板块实时行情 | 5min |
+| `news_sentiment` | 新闻情绪分析 | 1h |
+| `recommend_top_picks` | 综合推荐 | 4h |
+| `recommend_dip_buy` | 加仓推荐 | 12h |
 
 ### 基金类型
 
