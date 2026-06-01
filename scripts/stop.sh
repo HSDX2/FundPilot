@@ -30,7 +30,14 @@ echo "[1/3] Stopping frontend..."
 FRONTEND_PID=$(lsof -ti tcp:"$FRONTEND_PORT" 2>/dev/null || true)
 if [ -n "$FRONTEND_PID" ]; then
     kill "$FRONTEND_PID" 2>/dev/null || true
-    echo "  Stopped frontend (PID $FRONTEND_PID) on port $FRONTEND_PORT"
+    sleep 1
+    # 如进程未退出，强制杀死
+    if kill -0 "$FRONTEND_PID" 2>/dev/null; then
+        kill -9 "$FRONTEND_PID" 2>/dev/null || true
+        echo "  Force killed frontend (PID $FRONTEND_PID)"
+    else
+        echo "  Stopped frontend (PID $FRONTEND_PID) on port $FRONTEND_PORT"
+    fi
 else
     echo "  No frontend process found on port $FRONTEND_PORT"
 fi
@@ -41,7 +48,14 @@ echo "[2/3] Stopping backend..."
 BACKEND_PID=$(lsof -ti tcp:"$APP_PORT" 2>/dev/null || true)
 if [ -n "$BACKEND_PID" ]; then
     kill "$BACKEND_PID" 2>/dev/null || true
-    echo "  Stopped backend (PID $BACKEND_PID) on port $APP_PORT"
+    sleep 1
+    # 如进程未退出，强制杀死
+    if kill -0 "$BACKEND_PID" 2>/dev/null; then
+        kill -9 "$BACKEND_PID" 2>/dev/null || true
+        echo "  Force killed backend (PID $BACKEND_PID)"
+    else
+        echo "  Stopped backend (PID $BACKEND_PID) on port $APP_PORT"
+    fi
 else
     echo "  No backend process found on port $APP_PORT"
 fi

@@ -232,6 +232,7 @@ CREATE TABLE public.ai_providers (
     model_name      character varying(64),
     is_active       boolean NOT NULL,
     web_search_enabled boolean DEFAULT FALSE,
+    reasoning_enabled  boolean DEFAULT FALSE,
     extra_config    jsonb,
     created_at      timestamp with time zone DEFAULT now() NOT NULL,
     updated_at      timestamp with time zone DEFAULT now() NOT NULL

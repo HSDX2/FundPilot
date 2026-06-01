@@ -5,11 +5,12 @@ export interface AIProviderItem {
   id: string;
   name: string;
   provider_type: string;
-  api_key: string;
+  api_key: string | null;
   api_base_url: string;
   model_name: string;
   is_active: boolean;
   web_search_enabled: boolean;
+  reasoning_enabled: boolean;
   extra_config: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
@@ -39,7 +40,7 @@ export async function getProvider(
 export async function createProvider(body: {
   name: string;
   provider_type: string;
-  api_key: string;
+  api_key: string | null;
   api_base_url: string;
   model_name: string;
   extra_config?: Record<string, unknown>;

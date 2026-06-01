@@ -263,6 +263,27 @@ async def generate_batch_advice(
     )
 
 
+@router.delete(
+    "/advice",
+    summary="批量删除操作建议",
+    description="按 ID 列表批量删除操作建议",
+)
+async def batch_delete_advice(
+    ids: str = Query(description="UUID 列表，逗号分隔"),
+    service: AnalysisService = Depends(get_analysis_service),
+):
+    id_list = []
+    for raw in ids.split(","):
+        raw = raw.strip()
+        try:
+            id_list.append(uuid.UUID(raw))
+        except ValueError:
+            raise InvalidArgumentError(f"无效 ID: {raw}")
+    deleted = await service._advice_repo.delete_by_ids(id_list)
+    await service._advice_repo.session.commit()
+    return ApiResponse.success({"deleted": deleted})
+
+
 @router.get(
     "/advice",
     summary="查询基金操作建议列表",

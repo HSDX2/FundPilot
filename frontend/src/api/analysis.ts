@@ -154,6 +154,12 @@ export async function getAdvice(
   return api.get(`analysis/advice/${id}`).json();
 }
 
+export async function batchDeleteAdvice(
+  ids: string[],
+): Promise<ApiEnvelope<{ deleted: number }>> {
+  return api.delete(`analysis/advice?ids=${ids.join(",")}`).json();
+}
+
 export async function generateAdvice(body: {
   fund_id: string;
 }): Promise<ApiEnvelope<FundAdvice>> {

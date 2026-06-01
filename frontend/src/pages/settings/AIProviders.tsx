@@ -152,7 +152,14 @@ export function AIProviders() {
       title: "联网搜索",
       dataIndex: "web_search_enabled",
       key: "web_search",
-      width: 100,
+      width: 90,
+      render: (v: boolean) => v ? <Tag color="green">启用</Tag> : <Tag>禁用</Tag>,
+    },
+    {
+      title: "深度思考",
+      dataIndex: "reasoning_enabled",
+      key: "reasoning",
+      width: 90,
       render: (v: boolean) => v ? <Tag color="green">启用</Tag> : <Tag>禁用</Tag>,
     },
     {
@@ -297,6 +304,14 @@ export function AIProviders() {
             <Input placeholder="deepseek-chat" />
           </Form.Item>
           <Form.Item name="web_search_enabled" label="联网搜索" initialValue={false}>
+            <Select
+              options={[
+                { value: true, label: "启用" },
+                { value: false, label: "禁用" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="reasoning_enabled" label="深度思考" initialValue={false}>
             <Select
               options={[
                 { value: true, label: "启用" },

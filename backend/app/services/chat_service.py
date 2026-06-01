@@ -314,7 +314,27 @@ class ChatService:
                 # Text content
                 if delta.content:
                     full_content += delta.content
+                    # DeepSeek XML 格式 tool call: 累积到完整 </invoke> 前不 yield
+                    if "<invoke" in full_content and "</invoke>" not in full_content:
+                        continue
                     yield f"data: {json.dumps({'type': 'token', 'content': delta.content})}\n\n"
+
+            # 检查 DeepSeek XML 格式 tool call
+            if not tool_calls and "<invoke" in full_content:
+                import re as _re
+                for _m in _re.finditer(
+                    r'<invoke name="(\w+)">(?:\s*<parameter[^>]*>\s*(.*?)\s*</parameter>)?\s*</invoke>',
+                    full_content, _re.DOTALL,
+                ):
+                    idx = len(tool_calls)
+                    fn = _m.group(1)
+                    param_content = _m.group(2) or ""
+                    # 解析参数
+                    params = {}
+                    for _p in _re.finditer(r'<parameter name="(\w+)"[^>]*>\s*(.*?)\s*</parameter>', param_content, _re.DOTALL):
+                        params[_p.group(1)] = _p.group(2)
+                    args_str = json.dumps(params) if params else "{}"
+                    tool_calls[idx] = {"id": f"xml_call_{idx}", "name": fn, "args": args_str}
 
             # Handle tool calls
             if tool_calls:
@@ -413,7 +433,37 @@ class ChatService:
                 ],
             }
         elif name == "web_search":
-            return {"info": "联网搜索功能未启用"}
+            query = args.get("query", "")
+            if not query:
+                return {"info": "请提供搜索关键词"}
+            try:
+                import httpx, re
+                headers = {"User-Agent": "Mozilla/5.0", "Accept-Language": "zh-CN,zh;q=0.9"}
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.get(
+                        "https://www.sogou.com/web",
+                        params={"query": query},
+                        headers=headers,
+                        follow_redirects=True,
+                    )
+                    results = []
+                    for match in re.finditer(
+                        r'<h3[^>]*>.*?<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
+                        resp.text, re.DOTALL,
+                    ):
+                        title = re.sub(r"<[^>]+>|&[a-z]+;", "", match.group(2)).strip()
+                        url = match.group(1)
+                        if title:
+                            results.append({"title": title, "url": url})
+                        if len(results) >= 8:
+                            break
+                    if results:
+                        return {"results": results, "query": query}
+                    snippet = re.sub(r"<[^>]+>", " ", resp.text)[:2000]
+                    return {"raw_snippet": snippet, "query": query}
+            except Exception as e:
+                logger.exception("web_search failed")
+                return {"info": f"搜索失败: {str(e)[:100]}"}
         return {"info": "未知工具"}
 
     @staticmethod

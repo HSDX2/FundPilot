@@ -96,7 +96,12 @@ def _schedule_config_to_cron(config: dict) -> tuple[str, str, str, str, str]:
 
     weekdays = config.get("weekdays")
     month_days = config.get("month_days")
-    day_of_week = ",".join(str(d) for d in weekdays) if weekdays else "*"
+    # APScheduler 的 day_of_week: 0=周一, 1=周二 ... 6=周日
+    # 前端存储的是 isoweekday: 1=周一 ... 7=周日
+    if weekdays:
+        day_of_week = ",".join(str(d - 1) for d in weekdays if 1 <= d <= 7)
+    else:
+        day_of_week = "*"
     day = ",".join(str(d) for d in month_days) if month_days else "*"
 
     return (minute, hour, day, "*", day_of_week)

@@ -136,6 +136,7 @@ class OpenAICompatibleProvider(AIProvider):
                         msg["reasoning_content"] = ""
                         messages.append(msg)
                         messages.append({"role": "tool", "tool_call_id": tc.id, "content": "搜索完成"})
+                    messages.append({"role": "user", "content": "请结合搜索结果以JSON格式回复"})
                 else:
                     messages.append({"role": "assistant", "content": raw_content})
                     messages.append({"role": "user", "content": "请结合搜索结果以JSON格式回复"})
@@ -146,6 +147,7 @@ class OpenAICompatibleProvider(AIProvider):
             return _parse_json_safe(raw_content)
 
         # 无工具模式：直接请求 JSON
+        messages.append({"role": "user", "content": "以 JSON 格式回复。"})
         text = await self.chat(messages=messages, temperature=temperature, max_tokens=max_tokens)
         return _parse_json_safe(text)
 

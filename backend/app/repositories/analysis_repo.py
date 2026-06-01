@@ -187,6 +187,18 @@ class FundAdviceRepo(BaseRepository[FundAdvice]):
         result = await self.session.execute(query)
         return result.all(), total
 
+    async def delete_by_ids(self, ids: list[uuid.UUID]) -> int:
+        """批量删除操作建议。"""
+        if not ids:
+            return 0
+        stmt = select(FundAdvice).where(FundAdvice.id.in_(ids))
+        result = await self.session.execute(stmt)
+        items = result.scalars().all()
+        for item in items:
+            await self.session.delete(item)
+        await self.session.flush()
+        return len(items)
+
 
 class RecommendationRepo(BaseRepository[Recommendation]):
     def __init__(self, session: AsyncSession) -> None:

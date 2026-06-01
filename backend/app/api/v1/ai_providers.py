@@ -81,6 +81,7 @@ async def create_ai_provider(
         model_name=body.model_name,
         is_active=False,
         web_search_enabled=body.web_search_enabled,
+        reasoning_enabled=body.reasoning_enabled,
         extra_config=body.extra_config,
     )
     if provider.id is None:

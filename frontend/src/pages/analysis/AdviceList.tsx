@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
-import { Table, Select, Tag, Button, Modal, InputNumber, Radio, Input, Space, message, Typography, Card, DatePicker } from "antd";
-import { SearchOutlined, ThunderboltOutlined, SettingOutlined } from "@ant-design/icons";
+import { Table, Select, Tag, Button, Modal, InputNumber, Radio, Input, Space, message, Typography, Card, DatePicker, Popconfirm } from "antd";
+import { SearchOutlined, ThunderboltOutlined, SettingOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { listAdvice, generateBatchAdvice, type FundAdvice } from "@/api/analysis";
+import { listAdvice, generateBatchAdvice, batchDeleteAdvice, type FundAdvice } from "@/api/analysis";
 import { searchFunds, type FundItem } from "@/api/funds";
 import { PromptEditor } from "@/components/PromptEditor";
 import { usePageSearchParams } from "@/hooks/usePageSearchParams";
@@ -48,6 +48,7 @@ export function AdviceList() {
   // 详情弹窗
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailFund, setDetailFund] = useState<FundAdvice | null>(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
 
   // 加载基金列表（用于选择基金）
   useEffect(() => {
@@ -122,6 +123,18 @@ export function AdviceList() {
       }
     },
     onError: (err) => message.error(err instanceof Error ? err.message : "分析请求失败"),
+  });
+
+  const { mutate: batchDelete, isPending: deleting } = useMutation({
+    mutationFn: (ids: string[]) => batchDeleteAdvice(ids),
+    onSuccess: (res) => {
+      if (res.success) {
+        message.success(`已删除 ${res.data.deleted} 条建议`);
+        setSelectedRowKeys([]);
+        queryClient.invalidateQueries({ queryKey: ["advice"] });
+      }
+    },
+    onError: () => message.error("删除失败"),
   });
 
   const columns = [
@@ -252,11 +265,27 @@ export function AdviceList() {
         />
       </Space>
 
+      {selectedRowKeys.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <Popconfirm
+            title={`确认删除选中的 ${selectedRowKeys.length} 条建议？`}
+            onConfirm={() => batchDelete(selectedRowKeys)}
+          >
+            <Button danger loading={deleting} icon={<DeleteOutlined />} size="small">
+              批量删除 ({selectedRowKeys.length})
+            </Button>
+          </Popconfirm>
+        </div>
+      )}
       <Table
         columns={columns}
         dataSource={data?.items ?? []}
         rowKey="id"
         loading={isLoading}
+        rowSelection={{
+          selectedRowKeys,
+          onChange: (keys) => setSelectedRowKeys(keys as string[]),
+        }}
         pagination={{
           ...paginationConfig,
           current: page,
