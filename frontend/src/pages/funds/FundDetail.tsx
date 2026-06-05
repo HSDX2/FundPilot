@@ -4,9 +4,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Descriptions, Card, Tag, Spin, Empty, Typography, DatePicker, Space, Statistic, Button, message, Modal,
 } from "antd";
-import { ArrowUpOutlined, ArrowDownOutlined, RobotOutlined, HistoryOutlined, DownloadOutlined } from "@ant-design/icons";
+import { ArrowUpOutlined, ArrowDownOutlined, RobotOutlined, HistoryOutlined, DownloadOutlined, StarFilled, StarOutlined } from "@ant-design/icons";
 import type { Dayjs } from "dayjs";
 import { getFundDetail, getFundNav, collectFundNav } from "@/api/funds";
+import { listWatchedFunds, watchFund, unwatchFund } from "@/api/watchlist";
 import { extractErrorMessage } from "@/api/client";
 import { NavChart } from "@/components/NavChart";
 import dayjs from "dayjs";
@@ -76,6 +77,34 @@ export function FundDetail() {
     },
   });
 
+  // 关注状态
+  const { data: watchedIds } = useQuery({
+    queryKey: ["watchlist", "fund-ids"],
+    queryFn: async () => {
+      const res = await listWatchedFunds();
+      if (!res.success) return new Set<string>();
+      return new Set((res.data.items ?? []).map((w) => w.fund_id));
+    },
+  });
+
+  const { mutate: doWatch } = useMutation({
+    mutationFn: (fundId: string) => watchFund(fundId),
+    onSuccess: () => {
+      message.success("已关注");
+      queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+    },
+    onError: () => message.error("关注失败"),
+  });
+
+  const { mutate: doUnwatch } = useMutation({
+    mutationFn: (fundId: string) => unwatchFund(fundId),
+    onSuccess: () => {
+      message.success("已取消关注");
+      queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+    },
+    onError: () => message.error("取消关注失败"),
+  });
+
   const chartData = useMemo(() => {
     const base = (navData ?? [])
       .filter((d) => d.nav != null)
@@ -127,6 +156,19 @@ export function FundDetail() {
             loading={collectingLatest}
             onClick={() => collectLatest()}
           >获取最新数据</Button>
+          <Button
+            type="link"
+            icon={fund && watchedIds?.has(fund.id)
+              ? <StarFilled style={{ color: "#faad14" }} />
+              : <StarOutlined />}
+            onClick={() => {
+              if (!fund) return;
+              if (watchedIds?.has(fund.id)) doUnwatch(fund.id);
+              else doWatch(fund.id);
+            }}
+          >
+            {fund && watchedIds?.has(fund.id) ? "已关注" : "关注"}
+          </Button>
           <Button type="primary" icon={<RobotOutlined />} onClick={() => setChatOpen(true)}>AI 问询</Button>
         </div>
       </div>

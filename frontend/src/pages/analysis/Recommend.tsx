@@ -1,13 +1,18 @@
 import { useState } from "react";
 import {
-  Card, Table, Tag, Typography, Button, Segmented, Space, message, Empty, Spin, Popconfirm, DatePicker, Modal, Card as AntCard,
+  Card, Table, Tag, Typography, Button, Segmented, Space, message, Popconfirm, DatePicker, Modal, Card as AntCard,
+  Tooltip,
 } from "antd";
 import {
-  BulbOutlined, SettingOutlined, ReloadOutlined, WarningFilled, CheckCircleFilled, DeleteOutlined,
+  BulbOutlined, SettingOutlined, ReloadOutlined, DeleteOutlined,
 } from "@ant-design/icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { getTopPicks, getDipBuy, getRecommendHistory, deleteRecommendHistory, type RecommendRecord } from "@/api/recommend";
+import {
+  generateRecommend, getRecommendHistory, deleteRecommendHistory,
+  MODE_LABELS, MODE_DESCRIPTIONS,
+  type RecommendRecord,
+} from "@/api/recommend";
 import { PromptEditor } from "@/components/PromptEditor";
 import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
@@ -26,10 +31,17 @@ const TYPE_STYLES: Record<string, string> = {
   sector: "purple",
 };
 
+const MODES = ["momentum", "latent", "rebound", "defensive"] as const;
+const MODE_OPTIONS = MODES.map((m) => ({
+  value: m,
+  label: MODE_LABELS[m],
+}));
+
 export function Recommend() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [genTab, setGenTab] = useState("top-picks");
+  const [genTab, setGenTab] = useState("fund");
+  const [subMode, setSubMode] = useState<string>("momentum");
   const [page, setPage] = useState(1);
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
@@ -39,21 +51,20 @@ export function Recommend() {
   const startStr = dateRange?.[0]?.format("YYYY-MM-DD");
   const endStr = dateRange?.[1]?.format("YYYY-MM-DD");
 
-  const historyMode = genTab === "top-picks" ? "top_picks" : "dip_buy";
-
   const { data: history, isLoading: historyLoading } = useQuery({
-    queryKey: ["recommend", "history", page, startStr, endStr, historyMode],
+    queryKey: ["recommend", "history", genTab, subMode, page, startStr, endStr],
     queryFn: async () => {
-      const res = await getRecommendHistory({ page, page_size: 20, start_date: startStr, end_date: endStr, mode: historyMode });
+      const res = await getRecommendHistory({ page, page_size: 20, start_date: startStr, end_date: endStr, mode: subMode });
       return res.success ? res.data : { items: [], total: 0, page: 1, page_size: 20 };
     },
   });
 
-  // 生成推荐
+  const filteredHistory = (history?.items ?? []).filter(
+    (item) => item.type === genTab && item.mode === subMode,
+  );
+
   const { mutate: generate, isPending: generating } = useMutation({
-    mutationFn: () => genTab === "top-picks"
-      ? getTopPicks({ limit: 10 })
-      : getDipBuy({ limit: 10 }),
+    mutationFn: () => generateRecommend({ limit: 10, category: genTab, mode: subMode }),
     onSuccess: (res) => {
       if (res.success) {
         message.success(`推荐完成，共 ${res.data.total} 条结果`);
@@ -65,7 +76,6 @@ export function Recommend() {
     onError: () => message.error("推荐请求失败"),
   });
 
-  // 批量删除
   const { mutate: batchDelete, isPending: deleting } = useMutation({
     mutationFn: (ids: string[]) => deleteRecommendHistory(ids),
     onSuccess: (res) => {
@@ -84,8 +94,8 @@ export function Recommend() {
       render: (v: string) => dayjs(v).format("MM-DD"),
     },
     {
-      title: "类型", dataIndex: "type", key: "type", width: 70,
-      render: (v: string) => <Tag color={TYPE_STYLES[v] ?? "default"}>{v === "fund" ? "基金" : "板块"}</Tag>,
+      title: "策略", dataIndex: "mode", key: "mode", width: 80,
+      render: (v: string) => <Tag>{MODE_LABELS[v] ?? v}</Tag>,
     },
     {
       title: "操作", dataIndex: "action", key: "action", width: 70,
@@ -138,12 +148,9 @@ export function Recommend() {
             loading={generating}
             onClick={() => generate()}
           >
-            生成{genTab === "top-picks" ? "综合推荐" : "加仓推荐"}
+            生成{genTab === "fund" ? "基金" : "板块"}{MODE_LABELS[subMode] ?? subMode}推荐
           </Button>
-          <Button
-            icon={<SettingOutlined />}
-            onClick={() => setPromptModalOpen(true)}
-          >
+          <Button icon={<SettingOutlined />} onClick={() => setPromptModalOpen(true)}>
             提示词设置
           </Button>
         </Space>
@@ -151,13 +158,29 @@ export function Recommend() {
 
       <Segmented
         value={genTab}
-        onChange={(v) => setGenTab(v as string)}
+        onChange={(v) => { setGenTab(v as string); setSelectedRowKeys([]); setPage(1); }}
         options={[
-          { value: "top-picks", label: "综合推荐" },
-          { value: "dip-buy", label: "加仓推荐" },
+          { value: "fund", label: "基金推荐" },
+          { value: "sector", label: "板块推荐" },
         ]}
-        style={{ margin: "16px 0" }}
+        style={{ margin: "16px 0 8px" }}
       />
+
+      <div style={{ marginBottom: 8 }}>
+        <Space wrap>
+          {MODE_OPTIONS.map((opt) => (
+            <Tooltip key={opt.value} title={MODE_DESCRIPTIONS[opt.value]}>
+              <Button
+                size="small"
+                type={subMode === opt.value ? "primary" : "default"}
+                onClick={() => setSubMode(opt.value)}
+              >
+                {opt.label}
+              </Button>
+            </Tooltip>
+          ))}
+        </Space>
+      </div>
 
       <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <Space wrap>
@@ -186,7 +209,7 @@ export function Recommend() {
 
       <Table
         columns={columns}
-        dataSource={history?.items ?? []}
+        dataSource={filteredHistory}
         rowKey="id"
         loading={historyLoading || generating}
         size="small"
@@ -197,7 +220,7 @@ export function Recommend() {
         pagination={{
           current: page,
           pageSize: 20,
-          total: history?.total ?? 0,
+          total: history?.total ?? filteredHistory.length,
           showSizeChanger: false,
           showTotal: (t) => `共 ${t} 条`,
           onChange: (p) => setPage(p),
@@ -217,10 +240,9 @@ export function Recommend() {
               <Tag color={detailItem.type === "fund" ? "blue" : "purple"}>
                 {detailItem.type === "fund" ? "基金" : "板块"}
               </Tag>
+              {detailItem.mode && <Tag>{MODE_LABELS[detailItem.mode] ?? detailItem.mode}</Tag>}
               <Text strong style={{ fontSize: 16 }}>{detailItem.target_name}</Text>
-              {detailItem.target_code && (
-                <Text code>{detailItem.target_code}</Text>
-              )}
+              {detailItem.target_code && <Text code>{detailItem.target_code}</Text>}
               <Tag color={detailItem.confidence >= 60 ? "#cf1322" : "#faad14"}>
                 置信度 {detailItem.confidence}
               </Tag>

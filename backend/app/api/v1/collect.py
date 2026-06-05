@@ -324,6 +324,16 @@ async def update_collector_setting(
     if update_data:
         await repo.update(setting.id, update_data)
 
+    # 实时同步 APScheduler：is_active / interval_seconds 变更影响定时调度
+    if "is_active" in update_data or "interval_seconds" in update_data:
+        from app.tasks.scheduler import reschedule_job
+        await reschedule_job(
+            collector_name,
+            is_active=update_data.get("is_active", setting.is_active),
+            schedule_config=dict(setting.schedule_config) if setting.schedule_config else None,
+            interval_seconds=update_data.get("interval_seconds", setting.interval_seconds),
+        )
+
     updated = await repo.get_by_name(collector_name)
     return ApiResponse.success(
         CollectorSettingResponse.model_validate(updated).model_dump()
@@ -365,6 +375,15 @@ async def update_collector_schedule(
             "定时策略已清空，请先禁用采集器或配置新的定时策略"
         )
     await repo.update(setting.id, {"schedule_config": current})
+
+    # 实时同步 APScheduler：定时策略变更始终需要重调度
+    from app.tasks.scheduler import reschedule_job
+    await reschedule_job(
+        collector_name,
+        is_active=setting.is_active,
+        schedule_config=current,
+        interval_seconds=setting.interval_seconds,
+    )
 
     updated = await repo.get_by_name(collector_name)
     return ApiResponse.success(

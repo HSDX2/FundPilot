@@ -31,9 +31,8 @@ class RecommendRequest(BaseModel):
     """推荐请求."""
 
     limit: int = Field(default=10, ge=1, le=20, description="推荐数量")
-    category: str | None = Field(
-        default=None, description="筛选：fund / sector / all（默认 all）",
-    )
+    category: str = Field(description="fund / sector")
+    mode: str = Field(description="momentum / latent / rebound / defensive")
 
 
 class DipBuyRequest(BaseModel):
@@ -41,10 +40,10 @@ class DipBuyRequest(BaseModel):
 
     limit: int = Field(default=10, ge=1, le=20, description="推荐数量")
     max_drawdown: float = Field(
-        default=5.0, ge=1.0, le=50.0, description="最大回撤阈值（%）",
+        default=2.0, ge=0.5, le=50.0, description="阶段跌幅阈值（%），默认 2%",
     )
     min_consecutive_days: int = Field(
-        default=3, ge=1, le=20, description="最少连跌天数",
+        default=2, ge=1, le=20, description="最少连跌天数，默认 2 天",
     )
 
 

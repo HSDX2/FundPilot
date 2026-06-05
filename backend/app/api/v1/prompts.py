@@ -25,6 +25,14 @@ def _load_defaults() -> dict[str, str]:
         NEWS_SENTIMENT_USER,
         RECOMMEND_DIP_BUY_SYSTEM,
         RECOMMEND_DIP_BUY_USER,
+        RECOMMEND_FUND_DEFENSIVE,
+        RECOMMEND_FUND_LATENT,
+        RECOMMEND_FUND_MOMENTUM,
+        RECOMMEND_FUND_REBOUND,
+        RECOMMEND_SECTOR_DEFENSIVE,
+        RECOMMEND_SECTOR_LATENT,
+        RECOMMEND_SECTOR_MOMENTUM,
+        RECOMMEND_SECTOR_REBOUND,
         RECOMMEND_TOP_PICKS_SYSTEM,
         RECOMMEND_TOP_PICKS_USER,
         SECTOR_ANALYSIS_SYSTEM,
@@ -42,11 +50,21 @@ def _load_defaults() -> dict[str, str]:
         "fund_advice_system": FUND_ADVICE_SYSTEM,
         "fund_advice_user": FUND_ADVICE_USER,
         "chat_system": CHAT_SYSTEM,
+        "news_batch_sentiment_user": NEWS_BATCH_SENTIMENT_USER,
+        # 新推荐系统 v2
+        "recommend_fund_momentum": RECOMMEND_FUND_MOMENTUM,
+        "recommend_fund_latent": RECOMMEND_FUND_LATENT,
+        "recommend_fund_rebound": RECOMMEND_FUND_REBOUND,
+        "recommend_fund_defensive": RECOMMEND_FUND_DEFENSIVE,
+        "recommend_sector_momentum": RECOMMEND_SECTOR_MOMENTUM,
+        "recommend_sector_latent": RECOMMEND_SECTOR_LATENT,
+        "recommend_sector_rebound": RECOMMEND_SECTOR_REBOUND,
+        "recommend_sector_defensive": RECOMMEND_SECTOR_DEFENSIVE,
+        # 旧推荐（保留兼容）
         "recommend_top_picks_system": RECOMMEND_TOP_PICKS_SYSTEM,
         "recommend_top_picks_user": RECOMMEND_TOP_PICKS_USER,
         "recommend_dip_buy_system": RECOMMEND_DIP_BUY_SYSTEM,
         "recommend_dip_buy_user": RECOMMEND_DIP_BUY_USER,
-        "news_batch_sentiment_user": NEWS_BATCH_SENTIMENT_USER,
     }
     return DEFAULTS
 
@@ -61,10 +79,20 @@ PROMPT_LABELS: dict[str, str] = {
     "fund_advice_system": "基金建议 — 系统提示词",
     "fund_advice_user": "基金建议 — 用户提示词",
     "chat_system": "AI 问询 — 系统提示词",
-    "recommend_top_picks_system": "综合推荐 — 系统提示词",
-    "recommend_top_picks_user": "综合推荐 — 用户提示词",
-    "recommend_dip_buy_system": "加仓推荐 — 系统提示词",
-    "recommend_dip_buy_user": "加仓推荐 — 用户提示词",
+    # 旧推荐（保留兼容）
+    "recommend_top_picks_system": "综合推荐 — 系统提示词（旧）",
+    "recommend_top_picks_user": "综合推荐 — 用户提示词（旧）",
+    "recommend_dip_buy_system": "加仓推荐 — 系统提示词（旧）",
+    "recommend_dip_buy_user": "加仓推荐 — 用户提示词（旧）",
+    # 新推荐 v2
+    "recommend_fund_momentum": "基金推荐 — 强势延续",
+    "recommend_fund_latent": "基金推荐 — 低位潜伏",
+    "recommend_fund_rebound": "基金推荐 — 超跌反弹",
+    "recommend_fund_defensive": "基金推荐 — 抗跌先锋",
+    "recommend_sector_momentum": "板块推荐 — 强势延续",
+    "recommend_sector_latent": "板块推荐 — 低位潜伏",
+    "recommend_sector_rebound": "板块推荐 — 超跌反弹",
+    "recommend_sector_defensive": "板块推荐 — 抗跌先锋",
     "news_batch_sentiment_user": "新闻情绪 — 批量分析用户提示词",
 }
 

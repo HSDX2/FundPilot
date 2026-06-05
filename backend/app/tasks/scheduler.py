@@ -156,6 +156,53 @@ async def register_jobs() -> None:
         )
 
 
+async def reschedule_job(
+    collector_name: str,
+    *,
+    is_active: bool | None = None,
+    schedule_config: dict | None = None,
+    interval_seconds: int | None = None,
+) -> None:
+    """根据参数实时重新调度单个采集任务，无需重启后端。
+
+    调用方传入最新值（而非本函数重新读库），避免事务提交时序问题。
+    """
+    task_fn = TASK_MAP.get(collector_name)
+    if task_fn is None:
+        logger.warning("reschedule_job: unknown collector %s", collector_name)
+        return
+
+    job_id = f"collect_{collector_name}"
+
+    # 未激活或无定时策略 → 移除 job
+    if is_active is False or not schedule_config:
+        try:
+            scheduler.remove_job(job_id)
+            logger.info("Removed job %s (inactive)", job_id)
+        except Exception:
+            pass  # job 可能不存在
+        return
+
+    config = dict(schedule_config)
+    if config.get("mode", "interval") == "interval" and not config.get("interval_minutes"):
+        default_secs = interval_seconds or DEFAULT_COLLECTOR_INTERVALS.get(
+            CollectorName(collector_name), 86400,
+        )
+        config["interval_minutes"] = max(1, default_secs // 60)
+
+    cron = _schedule_config_to_cron(config)
+
+    scheduler.add_job(
+        task_fn,
+        trigger="cron",
+        minute=cron[0], hour=cron[1], day=cron[2], month=cron[3], day_of_week=cron[4],
+        id=job_id,
+        name=job_id,
+        replace_existing=True,
+    )
+    logger.info("Rescheduled job %s: cron=%s", job_id, "/".join(cron))
+
+
 async def register_analysis_jobs() -> None:
     """Register AI analysis tasks (daily post-market)."""
     from app.tasks.analysis_tasks import (

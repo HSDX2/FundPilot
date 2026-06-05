@@ -28,19 +28,28 @@ export interface RecommendRecord {
   risk_warning: string | null;
 }
 
-export async function getTopPicks(params: {
-  limit?: number;
-  category?: string;
-}): Promise<ApiEnvelope<{ items: RecommendItem[]; total: number }>> {
-  return api.post("recommend/top-picks", { json: params }).json();
-}
+/** 子策略中文映射 */
+export const MODE_LABELS: Record<string, string> = {
+  momentum: "强势延续",
+  latent: "低位潜伏",
+  rebound: "超跌反弹",
+  defensive: "抗跌先锋",
+};
 
-export async function getDipBuy(params: {
+/** 子策略描述（tooltip） */
+export const MODE_DESCRIPTIONS: Record<string, string> = {
+  momentum: "推荐涨幅较大但还有上涨空间的标的",
+  latent: "推荐涨幅较小但有潜力的标的",
+  rebound: "推荐跌幅较大有望反弹的标的",
+  defensive: "推荐跌幅较小但基本面稳健的标的",
+};
+
+export async function generateRecommend(params: {
   limit?: number;
-  max_drawdown?: number;
-  min_consecutive_days?: number;
+  category: string;
+  mode: string;
 }): Promise<ApiEnvelope<{ items: RecommendItem[]; total: number }>> {
-  return api.post("recommend/dip-buy", { json: params }).json();
+  return api.post("recommend/generate", { json: params }).json();
 }
 
 export async function getRecommendHistory(params: {

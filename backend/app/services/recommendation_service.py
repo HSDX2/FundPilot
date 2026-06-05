@@ -11,9 +11,14 @@ from sqlalchemy import select
 
 from app.ai.openai_compat import OpenAICompatibleProvider
 from app.ai.prompts import (
-    RECOMMEND_DIP_BUY_SYSTEM,
-    RECOMMEND_DIP_BUY_USER,
-    RECOMMEND_TOP_PICKS_SYSTEM,
+    RECOMMEND_FUND_DEFENSIVE,
+    RECOMMEND_FUND_LATENT,
+    RECOMMEND_FUND_MOMENTUM,
+    RECOMMEND_FUND_REBOUND,
+    RECOMMEND_SECTOR_DEFENSIVE,
+    RECOMMEND_SECTOR_LATENT,
+    RECOMMEND_SECTOR_MOMENTUM,
+    RECOMMEND_SECTOR_REBOUND,
     RECOMMEND_TOP_PICKS_USER,
 )
 from app.integrations.akshare.fund_datasource import FundDataSource
@@ -96,7 +101,7 @@ class RecommendationService:
         return stored.get(key) or default
 
     async def _get_sector_rank_data(self, limit: int = 20) -> str:
-        """获取板块排行摘要."""
+        """获取板块排行摘要（涨幅靠前 + 温和上涨两组）. """
         from app.repositories.sector_repo import (
             SectorRealtimeRepo,
             SectorSnapshotRepo,
@@ -113,16 +118,30 @@ class RecommendationService:
                     self._sector_repo.session,
                 ),
             )
+            # 获取 limit*2 条，拆为涨幅靠前 + 温和上涨
             rank = await svc.get_rank(
                 session=self._sector_repo.session,
-                category=cat, limit=limit, sort_by="realtime_change_pct",
+                category=cat, limit=limit * 2, sort_by="realtime_change_pct",
             )
-            lines.append(f"【{cat}板块】")
-            for i, item in enumerate(rank.items[:limit], 1):
-                name = item.sector_name
-                rt = item.realtime_change_pct or item.change_pct or "-"
-                lines.append(f"  {i}. {name} 实时涨跌={rt}")
-        return "\n".join(lines)
+            all_items = rank.items[:limit * 2]
+            top = [i for i in all_items[:limit] if (i.realtime_change_pct or 0) > 0]
+            mild = [i for i in all_items[limit:] if (i.realtime_change_pct or 0) > 0]
+
+            def _fmt(items, start=1):
+                buf = []
+                for idx, item in enumerate(items, start):
+                    name = item.sector_name
+                    rt = item.realtime_change_pct or item.change_pct or "-"
+                    buf.append(f"  {idx}. {name} 实时涨跌={rt}")
+                return buf
+
+            if top:
+                lines.append(f"【{cat}板块 | 涨幅靠前】")
+                lines.extend(_fmt(top))
+            if mild:
+                lines.append(f"【{cat}板块 | 温和上涨】")
+                lines.extend(_fmt(mild[:limit // 2]))
+        return "\n".join(lines) if lines else "（暂无板块数据）"
 
     async def _get_money_flow_data(self, limit: int = 20) -> str:
         """获取资金流向摘要."""
@@ -144,20 +163,30 @@ class RecommendationService:
         return "\n".join(lines) if lines else "（暂无资金流向数据）"
 
     async def _get_fund_rank_data(self, limit: int = 20) -> str:
-        """获取基金排行摘要."""
+        """获取基金排行摘要（涨幅靠前 + 温和上涨两组）. """
         items, _ = await self._fund_repo.search(
             sort_by="estimate_change_pct", sort_order="desc",
-            page=1, page_size=limit,
+            page=1, page_size=limit * 2,
         )
+        all_items = list(items)[:limit * 2]
+        top = [i for i in all_items[:limit] if getattr(i, "estimate_change_pct", None) is not None and float(i.estimate_change_pct) > 0]
+        mild = [i for i in all_items[limit:] if getattr(i, "estimate_change_pct", None) is not None and float(i.estimate_change_pct) > 0]
+
+        def _fmt(items, start=1):
+            buf = []
+            for idx, item in enumerate(items, start):
+                est = f"{float(item.estimate_change_pct):.2f}%" if getattr(item, "estimate_change_pct", None) is not None else "-"
+                buf.append(f"  {idx}. {item.code} {item.name}: 估算涨跌={est}")
+            return buf
+
         lines = []
-        for i, item in enumerate(items, 1):
-            est = (
-                f"{float(item.estimate_change_pct):.2f}%"
-                if getattr(item, "estimate_change_pct", None) is not None
-                else "-"
-            )
-            lines.append(f"  {i}. {item.code} {item.name}: 估算涨跌={est}")
-        return "\n".join(lines)
+        if top:
+            lines.append("【基金 | 涨幅靠前】")
+            lines.extend(_fmt(top))
+        if mild:
+            lines.append("【基金 | 温和上涨】")
+            lines.extend(_fmt(mild[:limit // 2]))
+        return "\n".join(lines) if lines else "（暂无基金数据）"
 
     async def _get_news_sentiment_summary(self, limit: int = 10) -> str:
         """获取最新新闻情绪摘要."""
@@ -176,8 +205,8 @@ class RecommendationService:
 
     async def _get_dip_candidates(
         self, max_drawdown: float = 5.0, min_consecutive_days: int = 3, limit: int = 20,
-    ) -> list[dict]:
-        """筛选符合加仓条件的基金."""
+    ) -> tuple[list[dict], list[dict]]:
+        """筛选符合加仓条件的基金. 返回 (大幅回撤标的, 小幅下跌标的)."""
         from datetime import date as date_type
 
         today = date_type.today()
@@ -185,41 +214,48 @@ class RecommendationService:
 
         funds, _ = await self._fund_repo.search(page=1, page_size=200)
 
-        candidates = []
+        big_decliners: list[dict] = []
+        mild_decliners: list[dict] = []
+
         for fund in funds:
             nav_records = await self._fund_nav_repo.get_by_fund_and_date_range(
                 fund.id, start=start_20d, end=today,
             )
-            if len(nav_records) < min_consecutive_days + 1:
+            if len(nav_records) < 2:
                 continue
 
             sorted_navs = sorted(nav_records, key=lambda x: x.date)
-            latest_pct_values = []
-            consecutive_down = 0
-            for r in reversed(sorted_navs):
-                pct = r.daily_change_pct
-                if pct is not None:
-                    latest_pct_values.append(float(pct))
-                    if float(pct) < 0:
-                        consecutive_down += 1
-                    else:
-                        break
-
-            if consecutive_down < min_consecutive_days:
-                continue
 
             # 计算阶段跌幅
             first = sorted_navs[0]
             last = sorted_navs[-1]
-            if first.nav and last.nav and float(first.nav) > 0:
-                drop_pct = (float(last.nav) - float(first.nav)) / float(first.nav) * 100
-            else:
+            if not (first.nav and last.nav and float(first.nav) > 0):
+                continue
+            drop_pct = (float(last.nav) - float(first.nav)) / float(first.nav) * 100
+
+            # 连续下跌天数
+            consecutive_down = 0
+            for r in reversed(sorted_navs):
+                pct = r.daily_change_pct
+                if pct is not None and float(pct) < 0:
+                    consecutive_down += 1
+                else:
+                    break
+
+            # 判断归属组别后再获取实时估值（避免对全部200只都发起网络请求）
+            is_big = drop_pct <= -max_drawdown and consecutive_down >= min_consecutive_days
+            is_mild = -max_drawdown < drop_pct < 0
+            if not is_big and not is_mild:
                 continue
 
-            if drop_pct > -max_drawdown:
-                continue
+            # 实时估值（仅对候选基金执行）
+            est = await self._fund_ds.fetch_estimate_by_code(fund.code) if hasattr(self, '_fund_ds') else None
+            est_pct = None
+            if est and isinstance(est, dict):
+                try: est_pct = float(est.get("estimate_change_pct", 0))
+                except: pass
 
-            candidates.append({
+            item = {
                 "fund_id": str(fund.id),
                 "code": fund.code,
                 "name": fund.name,
@@ -228,11 +264,17 @@ class RecommendationService:
                 "consecutive_down": consecutive_down,
                 "latest_nav": float(last.nav) if last.nav else None,
                 "latest_date": str(last.date) if last.date else "",
-            })
-            if len(candidates) >= limit:
-                break
+                "estimate_change_pct": est_pct,
+            }
 
-        return candidates
+            if is_big:
+                big_decliners.append(item)
+                if len(big_decliners) >= limit:
+                    break
+            else:
+                mild_decliners.append(item)
+
+        return big_decliners, mild_decliners
 
     async def _get_nav_snippets(self, fund_ids: list[str], days: int = 10) -> str:
         """获取指定基金的净值走势片段."""
@@ -272,25 +314,79 @@ class RecommendationService:
             lines.append(f"{s.name}: 分类={s.category}")
         return "\n".join(lines)
 
-    async def top_picks(
-        self, limit: int = 10, category: str | None = None,
-    ) -> list[RecommendItem]:
-        """综合推荐."""
-        ai = await self._get_provider()
-        system = await self._get_prompt(
-            "recommend_top_picks_system", RECOMMEND_TOP_PICKS_SYSTEM,
-        )
-        user_template = await self._get_prompt(
-            "recommend_top_picks_user", RECOMMEND_TOP_PICKS_USER,
-        )
+    # ── 提示词 key 映射（category × mode） ─────────────────────────────────
+    _PROMPT_KEYS: dict[str, dict[str, tuple[str, str]]] = {
+        "fund": {
+            "momentum": ("recommend_fund_momentum", "recommend_fund_user"),
+            "latent": ("recommend_fund_latent", "recommend_fund_user"),
+            "rebound": ("recommend_fund_rebound", "recommend_fund_user"),
+            "defensive": ("recommend_fund_defensive", "recommend_fund_user"),
+        },
+        "sector": {
+            "momentum": ("recommend_sector_momentum", "recommend_sector_user"),
+            "latent": ("recommend_sector_latent", "recommend_sector_user"),
+            "rebound": ("recommend_sector_rebound", "recommend_sector_user"),
+            "defensive": ("recommend_sector_defensive", "recommend_sector_user"),
+        },
+    }
+    _PROMPT_DEFAULTS: dict[str, dict[str, str]] = {
+        "fund": {
+            "momentum": RECOMMEND_FUND_MOMENTUM,
+            "latent": RECOMMEND_FUND_LATENT,
+            "rebound": RECOMMEND_FUND_REBOUND,
+            "defensive": RECOMMEND_FUND_DEFENSIVE,
+        },
+        "sector": {
+            "momentum": RECOMMEND_SECTOR_MOMENTUM,
+            "latent": RECOMMEND_SECTOR_LATENT,
+            "rebound": RECOMMEND_SECTOR_REBOUND,
+            "defensive": RECOMMEND_SECTOR_DEFENSIVE,
+        },
+    }
 
-        sector_rank = await self._get_sector_rank_data(limit)
-        money_flow = await self._get_money_flow_data(limit)
-        fund_rank = await self._get_fund_rank_data(limit)
+    async def generate(
+        self, category: str, mode: str, limit: int = 10,
+    ) -> list[RecommendItem]:
+        """按类别+子策略生成推荐。category=fund|sector, mode=momentum|latent|rebound|defensive."""
+        ai = await self._get_provider()
+
+        # 选提示词
+        sys_key, usr_key = self._PROMPT_KEYS[category][mode]
+        sys_default = self._PROMPT_DEFAULTS[category][mode]
+        system = await self._get_prompt(sys_key, sys_default)
+        user_template = await self._get_prompt(usr_key, RECOMMEND_TOP_PICKS_USER)
+
+        # 收集数据
         news = await self._get_news_sentiment_summary()
+        money_flow = await self._get_money_flow_data(limit)
+
+        if category == "fund":
+            if mode in ("momentum",):
+                sector_rank = "（仅分析基金，不提供板块数据）"
+                fund_rank = await self._get_fund_rank_data(limit)
+            elif mode == "latent":
+                sector_rank = "（仅分析基金，不提供板块数据）"
+                fund_rank = await self._get_fund_rank_data(limit)
+            else:
+                # rebound / defensive: 使用 dip_candidates 数据
+                sector_rank = "（仅分析基金，不提供板块数据）"
+                big_d, mild_d = await self._get_dip_candidates(
+                    max_drawdown=5.0, min_consecutive_days=3, limit=limit,
+                )
+                targets = big_d if mode == "rebound" else mild_d
+                lines = []
+                for c in targets:
+                    est = f" 实时估值涨跌={c['estimate_change_pct']:+.2f}%" if c.get('estimate_change_pct') is not None else ""
+                    lines.append(f"{c['code']} {c['name']}: 阶段跌幅={c['drop_pct']}% 连跌={c['consecutive_down']}天{est}")
+                fund_rank = "\n".join(lines) if lines else "（暂无基金数据）"
+        else:
+            # sector
+            full_rank = await self._get_sector_rank_data(limit * 2)
+            fund_rank = "（仅分析板块，不提供基金数据）"
+            sector_rank = full_rank
 
         user = user_template.format(
-            category=category or "基金和板块",
+            category=f"{'基金' if category == 'fund' else '板块'}",
             limit=limit,
             sector_rank=sector_rank or "（暂无数据）",
             money_flow=money_flow or "（暂无数据）",
@@ -301,10 +397,11 @@ class RecommendationService:
         try:
             result = await ai.analyze(
                 system_prompt=system, user_prompt=user,
+                max_tokens=8192,
                 tools=self._web_search_tool,
             )
         except Exception as e:
-            logger.exception("AI top picks analysis failed")
+            logger.exception("AI generate failed: %s/%s", category, mode)
             raise
 
         raw_items = result.get("recommendations", []) if isinstance(result, dict) else []
@@ -312,7 +409,7 @@ class RecommendationService:
         for r in raw_items[:limit]:
             try:
                 items.append(RecommendItem(
-                    type=r.get("type", "fund"),
+                    type=category,
                     action=r.get("action", "buy"),
                     target_id=r.get("target_code", "") or r.get("target_name", ""),
                     target_name=r.get("target_name", ""),
@@ -323,82 +420,9 @@ class RecommendationService:
                     risk_warning=r.get("risk_warning"),
                 ))
             except Exception:
-                logger.exception("Skipping invalid recommendation item")
+                logger.exception("Skipping invalid generate item")
 
-        await self._save_results(items, mode="top_picks")
-        return items
-
-    async def dip_buy(
-        self, limit: int = 10,
-        max_drawdown: float = 5.0,
-        min_consecutive_days: int = 3,
-    ) -> list[RecommendItem]:
-        """加仓推荐."""
-        ai = await self._get_provider()
-        system = await self._get_prompt(
-            "recommend_dip_buy_system", RECOMMEND_DIP_BUY_SYSTEM,
-        )
-        user_template = await self._get_prompt(
-            "recommend_dip_buy_user", RECOMMEND_DIP_BUY_USER,
-        )
-
-        candidates = await self._get_dip_candidates(max_drawdown, min_consecutive_days, limit)
-        if not candidates:
-            return []
-
-        fund_ids = [c["fund_id"] for c in candidates]
-        nav_snippets = await self._get_nav_snippets(fund_ids)
-        sector_perf = await self._get_sector_performance_for_funds(
-            [c["name"] for c in candidates],
-        )
-        news = await self._get_news_sentiment_summary()
-
-        cand_lines = []
-        for c in candidates:
-            cand_lines.append(
-                f"{c['code']} {c['name']}: "
-                f"阶段跌幅={c['drop_pct']}% 连跌={c['consecutive_down']}天 "
-                f"最新净值={c['latest_nav']} ({c['latest_date']})",
-            )
-
-        user = user_template.format(
-            max_drawdown=max_drawdown,
-            min_consecutive_days=min_consecutive_days,
-            dip_candidates="\n".join(cand_lines),
-            nav_snippets=nav_snippets or "（暂无净值数据）",
-            sector_performance=sector_perf or "（暂无板块数据）",
-            news_sentiment=news or "（暂无新闻数据）",
-        )
-
-        try:
-            result = await ai.analyze(
-                system_prompt=system, user_prompt=user,
-                tools=self._web_search_tool,
-            )
-        except Exception as e:
-            logger.exception("AI dip buy analysis failed")
-            raise
-
-        raw_items = result.get("recommendations", []) if isinstance(result, dict) else []
-        items = []
-        for r in raw_items[:limit]:
-            try:
-                items.append(RecommendItem(
-                    type="fund",
-                    action=r.get("action", "watch"),
-                    target_id=r.get("target_code", "") or r.get("target_name", ""),
-                    target_name=r.get("target_name", ""),
-                    target_code=r.get("target_code"),
-                    confidence=int(r.get("confidence", 50)),
-                    reason_summary=r.get("reason_summary", ""),
-                    reason_detail=r.get("reason_detail"),
-                    risk_warning=r.get("risk_warning"),
-                ))
-            except Exception:
-                logger.exception("Skipping invalid dip buy item")
-
-        # 保存到数据库
-        await self._save_results(items, mode="dip_buy")
+        await self._save_results(items, mode=mode)
         return items
 
     async def _save_results(self, items: list[RecommendItem], mode: str = "top_picks") -> None:

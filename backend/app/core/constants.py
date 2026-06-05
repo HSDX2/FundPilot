@@ -120,7 +120,7 @@ COLLECTOR_META: dict[str, dict] = {
         "sort_order": 2,
         "interval_seconds": 86400,
         "is_active": True,
-        "schedule_config": {"mode": "specific_time", "specific_time": "00:00:00"},
+        "schedule_config": {"mode": "specific_time", "specific_time": "15:30:00"},
         "other_config": {"worker_count": 12},
     },
     "fund_estimate": {

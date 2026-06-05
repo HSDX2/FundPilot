@@ -286,6 +286,7 @@ class ChatService:
 
             full_content = ""
             full_reasoning = ""
+            in_xml_call = False
             tool_calls: dict[int, dict] = {}
 
             async for chunk in stream:
@@ -314,9 +315,17 @@ class ChatService:
                 # Text content
                 if delta.content:
                     full_content += delta.content
-                    # DeepSeek XML 格式 tool call: 累积到完整 </invoke> 前不 yield
-                    if "<invoke" in full_content and "</invoke>" not in full_content:
-                        continue
+                    # DeepSeek 工具调用检测（支持普通 XML 和 ｜DSML｜ 两种格式）
+                    _is_xml = False
+                    for _marker in ["<invoke", "DSML", "<tool_calls"]:
+                        if _marker in full_content:
+                            _is_xml = True
+                            break
+                    if _is_xml:
+                        _open_tags = sum(1 for m in ["<invoke", "<|DSML|", "<tool_calls"] if m in full_content)
+                        _close_tags = sum(1 for m in ["</invoke", "</|DSML|", "</tool_calls"] if m in full_content)
+                        if _open_tags != _close_tags or any(m in delta.content for m in ["</invoke", "DSML", "<tool_calls", "<invoke"]):
+                            continue
                     yield f"data: {json.dumps({'type': 'token', 'content': delta.content})}\n\n"
 
             # 检查 DeepSeek XML 格式 tool call
@@ -336,9 +345,14 @@ class ChatService:
                     args_str = json.dumps(params) if params else "{}"
                     tool_calls[idx] = {"id": f"xml_call_{idx}", "name": fn, "args": args_str}
 
-            # Handle tool calls
-            if tool_calls:
-                # Build assistant message with tool_calls (required by OpenAI API)
+            # 多轮 Tool Call 循环（支持 DeepSeek 连续多次调用工具）
+            MAX_AI_ROUNDS = 3  # 总轮数上限（首次 + 最多 2 次 follow-up）
+            _round = 0
+
+            while tool_calls:
+                _round += 1
+
+                # 构建 assistant 消息（含 tool_calls）
                 assistant_tc = []
                 for idx, tc in tool_calls.items():
                     tc_id = tc["id"] or f"call_{idx}"
@@ -358,7 +372,7 @@ class ChatService:
                 }
                 messages.append(assistant_msg)
 
-                # Execute tools and append tool results
+                # 执行工具并 yield tool_result 事件
                 for idx, tc in tool_calls.items():
                     try:
                         args = json.loads(tc["args"]) if tc["args"] else {}
@@ -373,9 +387,20 @@ class ChatService:
                         "content": json.dumps(result, ensure_ascii=False),
                     })
 
-                # Second round: send tool results back to AI
+                # 追加强制指令：告知 AI 已有搜索结果，禁止继续搜索
+                messages.append({
+                    "role": "user",
+                    "content": "基于以上搜索结果直接回答我的问题，不要再调用搜索工具。",
+                })
 
-                stream2 = await client.chat.completions.create(
+                # 已达最大轮次 → 不再请求 AI，清空内容退出
+                if _round >= MAX_AI_ROUNDS:
+                    full_content = ""
+                    full_reasoning = ""
+                    break
+
+                # 将工具结果发回 AI 获取下一轮响应
+                stream_n = await client.chat.completions.create(
                     model=provider_model.model_name,
                     messages=messages,
                     temperature=0.3,
@@ -384,22 +409,106 @@ class ChatService:
                     stream_options={"include_usage": False},
                 )
 
-                round2_content = ""
-                round2_reasoning = ""
-                async for chunk in stream2:
+                full_content = ""
+                full_reasoning = ""
+                next_tool_calls: dict[int, dict] = {}
+
+                async for chunk in stream_n:
                     delta = chunk.choices[0].delta if chunk.choices else None
                     if delta is None:
                         continue
+
+                    # DeepSeek 思考模式
                     rc = delta.model_extra.get("reasoning_content") if delta.model_extra else None
                     if rc:
-                        round2_reasoning += rc
+                        full_reasoning += rc
                         continue
-                    if delta.content:
-                        round2_content += delta.content
-                        yield f"data: {json.dumps({'type': 'token', 'content': delta.content})}\n\n"
 
-                full_content = round2_content
-                full_reasoning = round2_reasoning
+                    # 标准 tool_calls（本轮 AI 可能继续调用工具）
+                    if delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            idx = tc.index
+                            if idx not in next_tool_calls:
+                                next_tool_calls[idx] = {"id": tc.id, "name": "", "args": ""}
+                            if tc.function.name:
+                                next_tool_calls[idx]["name"] = tc.function.name
+                            if tc.function.arguments:
+                                next_tool_calls[idx]["args"] += tc.function.arguments
+                        continue
+
+                    # 文本内容（含 XML/DSML 检测，抑制 tool call 文本泄漏）
+                    if delta.content:
+                        full_content += delta.content
+                        _is_xml = False
+                        for _marker in ["<invoke", "DSML", "<tool_calls"]:
+                            if _marker in full_content:
+                                _is_xml = True
+                                break
+                        if _is_xml:
+                            _open_tags = sum(1 for m in ["<invoke", "<|DSML|", "<tool_calls"] if m in full_content)
+                            _close_tags = sum(1 for m in ["</invoke", "</|DSML|", "</tool_calls"] if m in full_content)
+                            if _open_tags != _close_tags or any(m in delta.content for m in ["</invoke", "DSML", "<tool_calls", "<invoke"]):
+                                continue
+
+                # 检查本轮内容中是否含 XML/DSML 格式 tool call（无 delta.tool_calls 时的后备检测）
+                if not next_tool_calls:
+                    import re as _re_xml
+                    # 标准 XML 格式
+                    for _m in _re_xml.finditer(
+                        r'<invoke name="(\w+)">(?:\s*<parameter[^>]*>\s*(.*?)\s*</parameter>)?\s*</invoke>',
+                        full_content, _re_xml.DOTALL,
+                    ):
+                        idx = len(next_tool_calls)
+                        fn = _m.group(1)
+                        param_content = _m.group(2) or ""
+                        params = {}
+                        for _p in _re_xml.finditer(
+                            r'<parameter name="(\w+)"[^>]*>\s*(.*?)\s*</parameter>',
+                            param_content, _re_xml.DOTALL,
+                        ):
+                            params[_p.group(1)] = _p.group(2)
+                        args_str = json.dumps(params) if params else "{}"
+                        next_tool_calls[idx] = {"id": f"xml_call_{idx}", "name": fn, "args": args_str}
+                    # ｜DSML｜ 格式
+                    if not next_tool_calls and "DSML" in full_content:
+                        for _m in _re_xml.finditer(
+                            r'<｜DSML｜invoke[^>]*name="(\w+)"[^>]*>(.*?)</｜DSML｜invoke>',
+                            full_content, _re_xml.DOTALL,
+                        ):
+                            idx = len(next_tool_calls)
+                            fn = _m.group(1)
+                            param_text = _m.group(2) or ""
+                            params = {}
+                            for _p in _re_xml.finditer(
+                                r'<parameter[^>]*name="(\w+)"[^>]*>\s*(.*?)\s*</parameter>',
+                                param_text, _re_xml.DOTALL,
+                            ):
+                                params[_p.group(1)] = _p.group(2)
+                            args_str = json.dumps(params) if params else "{}"
+                            next_tool_calls[idx] = {"id": f"dsml_call_{idx}", "name": fn, "args": args_str}
+
+                tool_calls = next_tool_calls  # 还有 tool call → 继续循环
+
+            logger.debug(
+                "Chat tool loop finished. rounds=%d, content_len=%d, tool_calls=%d, reasoning_len=%d",
+                _round, len(full_content or ""), len(tool_calls), len(full_reasoning or ""),
+            )
+
+            # 剥离 final full_content 中的残留 tool call（支持 XML 和 ｜DSML｜ 格式）
+            if any(m in (full_content or "") for m in ["<invoke", "DSML"]):
+                import re as _re_final
+                full_content = _re_final.sub(r'<[^>]*DSML[^>]*>.*?</[^>]*DSML[^>]*>', '', full_content or "", flags=_re_final.DOTALL)
+                full_content = _re_final.sub(r'<invoke[^>]*>.*?</invoke>', '', full_content, flags=_re_final.DOTALL)
+                full_content = full_content.strip()
+
+            # 所有轮次都没产生可用文本 → 兜底提示
+            if not full_content and _round > 0:
+                full_content = "联网搜索暂不可用，请关闭联网搜索重试或稍后重试。"
+
+            # 逐字 yield 最终内容
+            if full_content:
+                for _i in range(0, len(full_content), 10):
+                    yield f"data: {json.dumps({'type': 'token', 'content': full_content[_i:_i+10]})}\n\n"
 
             # Save to session memory（含 reasoning_content 以兼容 DeepSeek 思考模式）
             assistant_msg: dict = {"role": "assistant", "content": full_content}
@@ -437,29 +546,55 @@ class ChatService:
             if not query:
                 return {"info": "请提供搜索关键词"}
             try:
-                import httpx, re
-                headers = {"User-Agent": "Mozilla/5.0", "Accept-Language": "zh-CN,zh;q=0.9"}
-                async with httpx.AsyncClient(timeout=15.0) as client:
+                import httpx, re as _re
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                    "Accept-Language": "zh-CN,zh;q=0.9",
+                    "Accept": "text/html,application/xhtml+xml",
+                }
+                async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
                     resp = await client.get(
-                        "https://www.sogou.com/web",
-                        params={"query": query},
+                        "https://cn.bing.com/search",
+                        params={"q": query, "setlang": "zh-cn"},
                         headers=headers,
-                        follow_redirects=True,
                     )
                     results = []
-                    for match in re.finditer(
-                        r'<h3[^>]*>.*?<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
-                        resp.text, re.DOTALL,
+                    # Bing 搜索结果在 <li class="b_algo"> 中
+                    for block in _re.finditer(
+                        r'<li[^>]*class="b_algo"[^>]*>(.*?)</li>',
+                        resp.text, _re.DOTALL,
                     ):
-                        title = re.sub(r"<[^>]+>|&[a-z]+;", "", match.group(2)).strip()
-                        url = match.group(1)
+                        inner = block.group(1)
+                        link_m = _re.search(
+                            r'<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>',
+                            inner, _re.DOTALL,
+                        )
+                        if not link_m:
+                            continue
+                        title = _re.sub(r"<[^>]+>|&[a-z]+;", "", link_m.group(2)).strip()
+                        url = link_m.group(1)
+                        # 提取摘要（<p> 标签内容）
+                        snippet = ""
+                        snip_m = _re.search(r'<p[^>]*>(.*?)</p>', inner, _re.DOTALL)
+                        if snip_m:
+                            snippet = _re.sub(r"<[^>]+>|&[a-z]+;", "", snip_m.group(1)).strip()
                         if title:
-                            results.append({"title": title, "url": url})
+                            results.append({"title": title, "url": url, "snippet": snippet})
                         if len(results) >= 8:
                             break
                     if results:
-                        return {"results": results, "query": query}
-                    snippet = re.sub(r"<[^>]+>", " ", resp.text)[:2000]
+                        # 同时返回结构化结果和纯文本摘要（方便 AI 直接使用）
+                        text_parts = [f"搜索结果（{query}）："]
+                        for r in results:
+                            line = r["title"]
+                            if r.get("snippet"):
+                                line += f"：{r['snippet']}"
+                            text_parts.append(line)
+                        return {"results": results, "text_summary": "\n".join(text_parts), "query": query}
+                    # 无结果 → 检查是否被限流
+                    if resp.status_code == 429 or "captcha" in resp.text[:500].lower():
+                        return {"error": "SEARCH_BLOCKED", "message": "搜索服务暂时受限", "query": query}
+                    snippet = _re.sub(r"<[^>]+>", " ", resp.text)[:2000]
                     return {"raw_snippet": snippet, "query": query}
             except Exception as e:
                 logger.exception("web_search failed")

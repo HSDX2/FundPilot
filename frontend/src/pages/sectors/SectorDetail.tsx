@@ -8,8 +8,9 @@ import {
   getSectorDetail, getSectorMoneyFlow,
   collectSectorData, getSectorSnapshots,
 } from "@/api/sectors";
+import { listWatchedSectors, watchSector, unwatchSector } from "@/api/watchlist";
 import { extractErrorMessage } from "@/api/client";
-import { RobotOutlined, HistoryOutlined, DownloadOutlined } from "@ant-design/icons";
+import { RobotOutlined, HistoryOutlined, DownloadOutlined, StarFilled, StarOutlined } from "@ant-design/icons";
 import { ChatDialog } from "@/components/ChatDialog";
 import dayjs from "dayjs";
 
@@ -82,6 +83,34 @@ export function SectorDetail() {
       const msg = await extractErrorMessage(err, "最新数据采集请求失败");
       message.error(msg);
     },
+  });
+
+  // 关注状态
+  const { data: watchedIds } = useQuery({
+    queryKey: ["watchlist", "sector-ids"],
+    queryFn: async () => {
+      const res = await listWatchedSectors();
+      if (!res.success) return new Set<string>();
+      return new Set((res.data.items ?? []).map((w) => w.sector_id));
+    },
+  });
+
+  const { mutate: doWatch } = useMutation({
+    mutationFn: (sectorId: string) => watchSector(sectorId),
+    onSuccess: () => {
+      message.success("已关注");
+      queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+    },
+    onError: () => message.error("关注失败"),
+  });
+
+  const { mutate: doUnwatch } = useMutation({
+    mutationFn: (sectorId: string) => unwatchSector(sectorId),
+    onSuccess: () => {
+      message.success("已取消关注");
+      queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+    },
+    onError: () => message.error("取消关注失败"),
   });
 
   const flowPagination = useMemo(() => ({ pageSize: 10 }), []);
@@ -222,6 +251,18 @@ export function SectorDetail() {
             loading={collectingLatest}
             onClick={() => setLatestModalOpen(true)}
           >获取最新数据</Button>
+          <Button
+            type="link"
+            icon={watchedIds?.has(id!)
+              ? <StarFilled style={{ color: "#faad14" }} />
+              : <StarOutlined />}
+            onClick={() => {
+              if (watchedIds?.has(id!)) doUnwatch(id!);
+              else doWatch(id!);
+            }}
+          >
+            {watchedIds?.has(id!) ? "已关注" : "关注"}
+          </Button>
           <Button type="primary" icon={<RobotOutlined />} onClick={() => setChatOpen(true)}>AI 问询</Button>
         </div>
       </div>

@@ -28,6 +28,9 @@ env/
 .DS_Store
 Thumbs.db
 
+# SQLite database files (not PostgreSQL managed separately)
+*.db
+
 # Docker
 pgdata/
 

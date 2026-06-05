@@ -73,32 +73,31 @@ def _get_recommend_svc(
     )
 
 
-@router.post("/top-picks", summary="综合推荐")
-async def recommend_top_picks(
+@router.post("/generate", summary="生成推荐（新）")
+async def recommend_generate(
     body: RecommendRequest,
     svc: RecommendationService = Depends(_get_recommend_svc),
 ):
-    """从全市场筛选当前最值得关注的基金和板块。"""
-    items = await svc.top_picks(limit=body.limit, category=body.category)
+    """按基金/板块类别 + 子策略生成推荐。mode=momentum|latent|rebound|defensive"""
+    items = await svc.generate(category=body.category, mode=body.mode, limit=body.limit)
     return ApiResponse.success(
         RecommendResponse(items=items, total=len(items)).model_dump(),
     )
 
 
-@router.post("/dip-buy", summary="加仓推荐")
-async def recommend_dip_buy(
-    body: DipBuyRequest,
+@router.post("/clear", summary="清空旧推荐数据")
+async def clear_old_recommendations(
     svc: RecommendationService = Depends(_get_recommend_svc),
 ):
-    """筛选因回调被低估、值得加仓的基金。"""
-    items = await svc.dip_buy(
-        limit=body.limit,
-        max_drawdown=body.max_drawdown,
-        min_consecutive_days=body.min_consecutive_days,
+    """清空 mode='top_picks' 或 mode='dip_buy' 的旧数据。"""
+    from sqlalchemy import delete as _delete
+    from app.models.analysis import Recommendation
+    stmt = _delete(Recommendation).where(
+        Recommendation.mode.in_(["top_picks", "dip_buy"]),
     )
-    return ApiResponse.success(
-        RecommendResponse(items=items, total=len(items)).model_dump(),
-    )
+    result = await svc._rec_repo.session.execute(stmt)
+    await svc._rec_repo.session.commit()
+    return ApiResponse.success({"deleted": result.rowcount})
 
 
 @router.get("/history", summary="查询推荐历史")

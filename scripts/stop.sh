@@ -48,9 +48,14 @@ echo "[2/3] Stopping backend..."
 BACKEND_PID=$(lsof -ti tcp:"$APP_PORT" 2>/dev/null || true)
 if [ -n "$BACKEND_PID" ]; then
     kill "$BACKEND_PID" 2>/dev/null || true
-    sleep 1
-    # 如进程未退出，强制杀死
+    sleep 3
+    # 如进程未退出，强制杀死（连带清理 multiprocessing 孤儿进程）
     if kill -0 "$BACKEND_PID" 2>/dev/null; then
+        # 先清理 ProcessPoolExecutor 的子进程
+        CHILD_PIDS=$(pgrep -P "$BACKEND_PID" 2>/dev/null || true)
+        if [ -n "$CHILD_PIDS" ]; then
+            kill -9 $CHILD_PIDS 2>/dev/null || true
+        fi
         kill -9 "$BACKEND_PID" 2>/dev/null || true
         echo "  Force killed backend (PID $BACKEND_PID)"
     else

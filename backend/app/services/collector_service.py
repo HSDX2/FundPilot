@@ -144,6 +144,11 @@ def _nav_worker(
                     effective_start = start_date
                     if per_fund:
                         latest = await nav_repo.get_latest_nav_by_fund(fid)
+                        if latest is None:
+                            logger.warning(
+                                "per_fund: no NAV found for %s (%s), fetching full history",
+                                code, fid,
+                            )
                         effective_start = (
                             None if latest is None else latest.date
                         )
@@ -178,7 +183,10 @@ def _nav_worker(
                         errors.append(f"{code}: DB {exc}")
                 all_records.extend(records)
 
-        await worker_engine.dispose()
+        try:
+            await worker_engine.dispose()
+        except Exception:
+            pass
         return all_records, errors, added, updated
 
     return asyncio.run(_run())
@@ -612,15 +620,26 @@ class CollectorService:
         if per_fund:
             today = date.today()
             fund_ids = [f.id for f in funds]
+            # 分批查询 latest_dates，避免大 IN 子句导致 PG 查询失效
+            latest_dates: dict = {}
+            BATCH = 2000
             async with async_session_factory() as s:
                 nav_repo_bulk = FundNavRepo(s)
-                latest_dates = await nav_repo_bulk.get_latest_nav_dates(fund_ids)
+                for i in range(0, len(fund_ids), BATCH):
+                    batch = fund_ids[i:i + BATCH]
+                    batch_dates = await nav_repo_bulk.get_latest_nav_dates(batch)
+                    latest_dates.update(batch_dates)
+            logger.info(
+                "per_fund: %d funds total, %d have latest_nav_date in DB",
+                len(fund_ids), len(latest_dates),
+            )
             funds = [
                 f for f in funds
                 if f.id not in latest_dates or (today - latest_dates[f.id]).days > 1
             ]
             logger.info(
-                "per_fund skip: %d/%d funds need update", len(funds), len(fund_ids),
+                "per_fund: filtered to %d/%d funds needing update (1-day cutoff)",
+                len(funds), len(fund_ids),
             )
 
         total = len(funds)
@@ -665,6 +684,11 @@ class CollectorService:
                     if self._should_stop(task_name):
                         stopped = True
                         pool.shutdown(wait=False, cancel_futures=True)
+                        # 清理子进程，避免产生孤儿
+                        import signal as _sig
+                        import multiprocessing as _mp
+                        for _p in _mp.active_children():
+                            _p.terminate()
                         break
                     try:
                         _records, worker_errors, a, u = await fut
@@ -679,6 +703,11 @@ class CollectorService:
                         task_name, completed_funds,
                         f"{completed_chunks}/{n_chunks} chunks ({completed_funds}/{total} funds)",
                     )
+
+            # 确保多进程模式下所有子进程被清理
+            import multiprocessing as _mp2
+            for _p2 in _mp2.active_children():
+                _p2.terminate()
 
         else:
             # ── 单进程串行模式 ──
@@ -1772,7 +1801,7 @@ class CollectorService:
                     news_repo=NewsArticleRepo(s),
                     recommendation_repo=RecommendationRepo(s),
                 )
-                items = await svc.top_picks(limit=limit)
+                items = await svc.generate(category="fund", mode="momentum", limit=limit)
                 await s.commit()
 
             result = CollectResult(records_added=len(items), records_updated=0)
@@ -1810,9 +1839,9 @@ class CollectorService:
                     news_repo=NewsArticleRepo(s),
                     recommendation_repo=RecommendationRepo(s),
                 )
-                items = await svc.dip_buy(
-                    limit=limit, max_drawdown=max_drawdown,
-                    min_consecutive_days=min_consecutive_days,
+                items = await svc.generate(
+                    category="fund", mode="rebound",
+                    limit=limit,
                 )
                 await s.commit()
 
